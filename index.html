@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>APP QUẢN LÝ DẠY THÊM</title><link rel="manifest" href="manifest.json">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.4.2/mammoth.browser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="toast-container"></div>
+    <div id="loading-overlay" class="hidden"><div class="spinner"></div><p id="loading-text">Đang xử lý...</p></div>
+
+    <div id="app">
+        <main id="main-content">
+            <!-- ================= DASHBOARD ================= -->
+            <section id="view-home" class="view active">
+                <header class="app-header">
+                    <div class="greeting">
+                        <h2>Xin chào, Giáo viên! 👋</h2>
+                        <p>Hệ thống Quản lý Dạy thêm tự động</p>
+                    </div>
+                </header>
+
+                <div class="summary-grid">
+                    <div class="summary-card bg-blue"><i class="fas fa-layer-group"></i><div><h4 id="dash-total-classes">0</h4><p>Nhóm lớp</p></div></div>
+                    <div class="summary-card bg-green"><i class="fas fa-user-graduate"></i><div><h4 id="dash-total-students">0</h4><p>Học sinh</p></div></div>
+                    <div class="summary-card bg-orange"><i class="fas fa-calendar-day"></i><div><h4 id="dash-today-sessions">0</h4><p>Buổi hôm nay</p></div></div>
+                    <div class="summary-card bg-red"><i class="fas fa-money-bill-wave"></i><div><h4 id="dash-tuition-due">0</h4><p>Đến hạn thu</p></div></div>
+                </div>
+
+                <div id="dash-missed-list" class="schedule-list mb-15"></div>
+
+                <div class="section-title mt-20" style="margin-bottom: 10px;">
+                    <h3 style="color: var(--primary-dark); font-size: 1.1rem;">📅 LỊCH HỌC HÔM NAY</h3>
+                    <span class="date-badge" id="dash-today-date" style="font-weight: 800;">--/--</span>
+                </div>
+                <div id="dash-schedule-list" class="schedule-list"></div>
+            </section>
+
+            <!-- ================= QUẢN LÝ NHÓM LỚP ================= -->
+            <section id="view-classes" class="view">
+                <div class="top-bar"><div class="top-bar-title"><h2>📚 Lớp học</h2></div><button class="btn-primary" onclick="openModal('modal-add-class')"><i class="fas fa-plus"></i> Tạo nhóm</button></div>
+                <div id="class-list" class="class-grid"></div>
+            </section>
+
+            <!-- ================= LỊCH ================= -->
+            <section id="view-calendar" class="view">
+                <div class="top-bar"><div class="top-bar-title"><h2>📅 Lịch</h2></div></div>
+                <div class="tab-container mb-15">
+                    <div class="tab-btn" onclick="switchCalTab('study', this)">Lịch học</div>
+                    <div class="tab-btn active" onclick="switchCalTab('holiday', this)">Lịch nghỉ</div>
+                    <div class="tab-btn" onclick="switchCalTab('makeup', this)">Dạy bù</div>
+                    <div class="tab-btn" onclick="switchCalTab('month', this)">Tháng</div>
+                </div>
+                
+                <div id="tab-study" class="cal-tab hidden"><div class="section-title mt-15"><h3>Lịch học sắp tới</h3></div><div id="upcoming-list" class="list-container"></div></div>
+                <div id="tab-holiday" class="cal-tab"><div class="section-title mt-15"><h3>Danh sách ngày nghỉ</h3><button class="btn-sm bg-blue text-white" style="border:none;" onclick="openAddHoliday()"><i class="fas fa-plus"></i> Thêm</button></div><div class="alert-item yellow mb-15"><div class="alert-info">Ngày nghỉ sẽ tự động loại bỏ lịch học và lùi số buổi.</div></div><div id="holiday-list" class="list-container"></div></div>
+                <div id="tab-makeup" class="cal-tab hidden"><div class="section-title mt-15"><h3>Lịch dạy bù</h3><button class="btn-sm bg-blue text-white" style="border:none;" onclick="openModal('modal-add-makeup')"><i class="fas fa-plus"></i> Thêm</button></div><div id="makeup-list" class="list-container"></div></div>
+                <div id="tab-month" class="cal-tab hidden"><div class="section-title mt-15"><h3>Lịch tháng này (Bấm vào ca học để sửa Điểm danh)</h3></div><div id="month-list" class="list-container"></div></div>
+            </section>
+
+            <!-- ================= HỌC PHÍ ================= -->
+            <section id="view-tuition" class="view">
+                <div class="top-bar"><div class="top-bar-title"><h2>💰 Học phí</h2></div></div>
+                <div class="tuition-summary mb-20">
+                    <div class="ts-box"><p>Tổng dự thu</p><h3 class="text-orange" id="ts-expected">0đ</h3></div>
+                    <div class="ts-box"><p>Đã thu</p><h3 class="text-green" id="ts-collected">0đ</h3></div>
+                </div>
+                
+                <!-- Khu vực 1: Đến kỳ thu tiền -->
+                <div class="section-title"><h3>Đến kỳ thu tiền</h3></div>
+                <div id="tuition-due-list" class="list-container mb-20"></div>
+
+                <!-- ĐÃ THÊM: Khu vực 2: Lịch sử thu tiền (Gần đây) -->
+                <div class="section-title mt-20"><h3>Lịch sử đóng tiền (30GD gần nhất)</h3></div>
+                <div id="tuition-history-list" class="list-container" style="padding-bottom: 70px;"></div>
+            </section>
+
+            <!-- ================= THÊM (Mở rộng) ================= -->
+            <section id="view-more" class="view">
+                <div class="top-bar"><div class="top-bar-title"><h2>⚙️ Khác</h2></div></div>
+                <div class="dashboard-grid">
+                    <div class="menu-card" onclick="switchView('view-students')"><div class="menu-icon bg-blue"><i class="fas fa-users"></i></div><div class="menu-info"><h4>Quản lý học sinh</h4><p>Hồ sơ & Import</p></div></div>
+                    <div class="menu-card"><div class="menu-icon bg-green"><i class="fas fa-chart-bar"></i></div><div class="menu-info"><h4>Thống kê</h4><p>Báo cáo doanh thu</p></div></div>
+                    <!-- ĐÃ SỬA: Bấm vào Cài đặt sẽ mở Modal Sao lưu/Khôi phục -->
+                    <div class="menu-card" onclick="openModal('modal-settings')"><div class="menu-icon bg-slate"><i class="fas fa-cog"></i></div><div class="menu-info"><h4>Cài đặt dữ liệu</h4><p>Sao lưu, Khôi phục</p></div></div>
+                </div>
+            </section>
+
+            <!-- ================= DANH SÁCH HỌC SINH ================= -->
+            <section id="view-students" class="view">
+                <div class="top-bar"><div class="top-bar-title"><h2>👥 Học sinh</h2></div><button class="btn-primary" onclick="openModal('modal-add-student')"><i class="fas fa-user-plus"></i></button></div>
+                <div class="action-buttons mb-15"><button class="btn-outline-action text-blue w-full" onclick="openImportModal()"><i class="fas fa-file-import"></i> IMPORT DANH SÁCH (Excel, Word, Ảnh)</button></div>
+                <div class="search-bar">
+                    <i class="fas fa-search"></i>
+                    <select id="filter-class-stu" onchange="renderStudents()" style="width:120px; border:none; border-right:1px solid #ddd; border-radius:0; padding-left:35px;"></select>
+                    <input type="text" id="search-student" placeholder="Tìm tên..." onkeyup="renderStudents()" style="padding-left:15px; border:none; background:transparent;">
+                </div>
+                <div id="student-list" class="list-container mt-15"></div>
+            </section>
+        </main>
+
+        <!-- THANH ĐIỀU HƯỚNG -->
+        <nav id="bottom-bar">
+            <div class="nav-item active" onclick="switchView('view-home', this)"><div class="nav-icon"><i class="fas fa-home"></i></div><span>Tổng quan</span></div>
+            <div class="nav-item" onclick="switchView('view-classes', this)"><div class="nav-icon"><i class="fas fa-layer-group"></i></div><span>Lớp học</span></div>
+            <div class="nav-item" onclick="switchView('view-calendar', this)"><div class="nav-icon"><i class="fas fa-calendar-alt"></i></div><span>Lịch</span></div>
+            <div class="nav-item" onclick="switchView('view-tuition', this)"><div class="nav-icon"><i class="fas fa-money-bill-wave"></i></div><span>Học phí</span></div>
+            <div class="nav-item" onclick="switchView('view-more', this)"><div class="nav-icon"><i class="fas fa-bars"></i></div><span>Thêm</span></div>
+        </nav>
+    </div>
+
+    <!-- ================= CÁC MODAL ================= -->
+    <div id="modal-add-class" class="modal"><div class="modal-content"><div class="modal-header"><h3>Thông tin nhóm lớp</h3><div class="close" onclick="closeModal('modal-add-class')"><i class="fas fa-times"></i></div></div><div class="modal-body"><input type="hidden" id="class-id"><div class="input-group"><label>Tên nhóm lớp *</label><input type="text" id="cl-name" placeholder="VD: Toán 8A"></div><div class="form-row"><div class="input-group"><label>Học phí / Buổi (VNĐ) *</label><input type="number" id="cl-fee" value="80000"></div><div class="input-group"><label>Mốc thu (Số buổi) *</label><input type="number" id="cl-cycle" value="10"></div></div><div class="input-group"><label>Ngày bắt đầu *</label><input type="date" id="cl-start"></div><div class="section-title mt-15"><h4>Thời khóa biểu mặc định</h4><button class="btn-sm" onclick="addTkbRow()"><i class="fas fa-plus"></i> Buổi</button></div><div id="tkb-container"></div></div><div class="modal-footer"><button class="btn-primary w-full" onclick="saveClass()">Lưu Nhóm Lớp</button></div></div></div>
+    
+    <div id="modal-add-student" class="modal"><div class="modal-content"><div class="modal-header"><h3>Hồ sơ học sinh</h3><div class="close" onclick="closeModal('modal-add-student')"><i class="fas fa-times"></i></div></div><div class="modal-body"><input type="hidden" id="stu-id"><div class="input-group"><label>Chọn nhóm lớp *</label><select id="stu-class"></select></div><div class="input-group"><label>Họ và tên *</label><input type="text" id="stu-name"></div><div class="form-row"><div class="input-group"><label>Số điện thoại PH</label><input type="tel" id="stu-phone"></div><div class="input-group"><label>Ngày bắt đầu</label><input type="date" id="stu-start"></div></div><div class="input-group"><label>Học phí tùy chỉnh (Nếu có)</label><input type="number" id="stu-custom-fee" placeholder="VD: 70000"></div></div><div class="modal-footer"><button class="btn-primary w-full" onclick="saveStudent()">Lưu Học Sinh</button></div></div></div>
+    
+    <div id="modal-import" class="modal"><div class="modal-content" style="max-height: 95vh;"><div class="modal-header"><h3>📤 Import Danh Sách</h3><div class="close" onclick="closeModal('modal-import')"><i class="fas fa-times"></i></div></div><div class="modal-body"><div id="import-step-1"><div class="drop-zone" onclick="document.getElementById('import-file').click()"><i class="fas fa-cloud-upload-alt drop-icon text-blue"></i><h4>Nhấn để chọn file</h4><p class="text-sm text-muted">Hỗ trợ: Excel (.xlsx), Word (.docx), Ảnh (.jpg, .png)</p><input type="file" id="import-file" style="display:none;" accept=".xlsx, .xls, .csv, .docx, .png, .jpg, .jpeg" onchange="handleImportFile(event)"></div></div><div id="import-step-2" class="hidden"><div class="alert-item green mb-15"><div class="alert-info" id="import-status">Đã trích xuất dữ liệu! Xác nhận bên dưới.</div></div><div class="input-group mb-15"><label style="color: var(--primary-dark);">Chọn nhóm lớp đưa vào *</label><select id="import-class-select" style="border: 2px solid var(--primary);"></select></div><div class="table-responsive"><table class="preview-table"><thead><tr><th>Họ và tên</th><th>SĐT Phụ huynh</th><th>Học phí (Nếu có)</th></tr></thead><tbody id="import-preview-body"></tbody></table></div></div></div><div class="modal-footer hidden" id="import-footer"><button class="btn-outline w-full" onclick="closeModal('modal-import')">Hủy</button><button class="btn-primary w-full" onclick="confirmImport()">✅ Xác nhận Nhập</button></div></div></div>
+
+    <div id="modal-attendance" class="modal"><div class="modal-content" style="height: 90vh;"><div class="modal-header"><div><h3 id="att-class-name">Điểm danh</h3><p class="text-sm text-muted" id="att-date-info"></p></div><div class="close" onclick="closeModal('modal-attendance')"><i class="fas fa-times"></i></div></div><div class="modal-body" style="padding: 0; background: #f8fafc;"><div class="att-alert"><i class="fas fa-info-circle"></i> Mặc định TẤT CẢ đang có mặt. Bấm để chuyển trạng thái.</div><div id="att-student-list" style="padding: 10px;"></div></div><div class="modal-footer"><button class="btn-primary w-full btn-large" style="font-size: 1.05rem;" onclick="submitAttendance()"><i class="fas fa-check-circle"></i> HOÀN THÀNH BUỔI HỌC</button></div></div></div>
+    
+    <div id="modal-add-holiday" class="modal"><div class="modal-content"><div class="modal-header"><h3>Thông tin Lịch Nghỉ</h3><div class="close" onclick="closeModal('modal-add-holiday')"><i class="fas fa-times"></i></div></div><div class="modal-body"><input type="hidden" id="hol-id"><div class="input-group"><label>Tên / Lý do nghỉ *</label><input type="text" id="hol-name" placeholder="VD: Nghỉ lễ Quốc khánh"></div><div class="form-row"><div class="input-group"><label>Từ ngày *</label><input type="date" id="hol-start"></div><div class="input-group"><label>Đến ngày *</label><input type="date" id="hol-end"></div></div><div class="input-group"><label>Áp dụng cho</label><select id="hol-class"><option value="ALL">Tất cả các nhóm lớp</option></select></div></div><div class="modal-footer"><button class="btn-primary w-full" onclick="saveHoliday()">Lưu Lịch Nghỉ</button></div></div></div>
+    
+    <div id="modal-add-makeup" class="modal"><div class="modal-content"><div class="modal-header"><h3>Thêm Lịch Dạy Bù</h3><div class="close" onclick="closeModal('modal-add-makeup')"><i class="fas fa-times"></i></div></div><div class="modal-body"><div class="input-group"><label>Chọn nhóm lớp *</label><select id="makeup-class"></select></div><div class="form-row"><div class="input-group"><label>Ngày dạy bù *</label><input type="date" id="makeup-date"></div></div><div class="form-row"><div class="input-group"><label>Từ giờ *</label><input type="time" id="makeup-start" value="18:00"></div><div class="input-group"><label>Đến giờ *</label><input type="time" id="makeup-end" value="20:00"></div></div><div class="input-group mb-0"><label>Ghi chú</label><input type="text" id="makeup-note" placeholder="VD: Bù cho ngày lễ"></div></div><div class="modal-footer"><button class="btn-primary w-full" onclick="saveMakeup()">Lưu Dạy Bù</button></div></div></div>
+
+    <div id="modal-pay-tuition" class="modal"><div class="modal-content"><div class="modal-header"><h3>Thu học phí</h3><div class="close" onclick="closeModal('modal-pay-tuition')"><i class="fas fa-times"></i></div></div><div class="modal-body text-center"><i class="fas fa-money-check-alt text-green" style="font-size: 3rem; margin-bottom:15px;"></i><h3 id="pay-stu-name">Học sinh</h3><p class="text-muted" id="pay-class-info">Toán 8A</p><div class="mt-15 p-15" style="background:#f8fafc; border-radius:12px;"><p>Số buổi tính phí: <strong id="pay-sessions">10</strong></p><p>Mức phí: <strong id="pay-fee-per">80,000đ</strong>/buổi</p><h2 class="text-orange mt-10" id="pay-total-amount">800,000đ</h2></div><input type="hidden" id="pay-stu-id"></div><div class="modal-footer"><button class="btn-primary w-full btn-large" onclick="confirmPayment()">XÁC NHẬN ĐÃ THU TIỀN</button></div></div></div>
+
+    <!-- ĐÃ THÊM: Modal Sao lưu & Khôi phục Dữ liệu -->
+    <div id="modal-settings" class="modal">
+        <div class="modal-content">
+            <div class="modal-header"><h3>⚙️ Cài đặt & Dữ liệu</h3><div class="close" onclick="closeModal('modal-settings')"><i class="fas fa-times"></i></div></div>
+            <div class="modal-body">
+                <div class="alert-item green mb-15"><div class="alert-info">Nên sao lưu dữ liệu thường xuyên. File sao lưu giúp bạn không bị mất dữ liệu khi đổi điện thoại/trình duyệt.</div></div>
+                
+                <button class="btn-primary w-full btn-large mb-15" onclick="backupData()" style="font-weight: 800; font-size: 1.05rem;">
+                    <i class="fas fa-download"></i> TẢI XUỐNG BẢN SAO LƯU
+                </button>
+                
+                <button class="btn-outline w-full btn-large" onclick="document.getElementById('restore-file').click()" style="color: var(--danger); border-color: var(--danger);">
+                    <i class="fas fa-upload"></i> KHÔI PHỤC TỪ FILE
+                </button>
+                <input type="file" id="restore-file" class="hidden" accept=".json" onchange="restoreData(event)">
+                
+                <p class="text-center text-muted text-sm mt-15">Phiên bản 1.0.1</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
