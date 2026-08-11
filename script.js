@@ -132,7 +132,7 @@ async function saveData() {
     if (currentUser) {
         try {
             const docRef = doc(firestoreDb, "DuLieuDayThem", currentUser.uid);
-            await setDoc(docRef, docRef.id, db);
+            await setDoc(docRef, db);
             console.log("☁️ Đã đồng bộ lên mây thành công!");
         } catch (e) {
             console.error("Lỗi khi đồng bộ lên mây: ", e);
