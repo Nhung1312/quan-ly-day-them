@@ -93,10 +93,27 @@
                 <div class="top-bar"><div class="top-bar-title"><h2>⚙️ Khác</h2></div></div>
                 <div class="dashboard-grid">
                     <div class="menu-card" onclick="switchView('view-students')"><div class="menu-icon bg-blue"><i class="fas fa-users"></i></div><div class="menu-info"><h4>Quản lý học sinh</h4><p>Hồ sơ & Import</p></div></div>
-                    <div class="menu-card"><div class="menu-icon bg-green"><i class="fas fa-chart-bar"></i></div><div class="menu-info"><h4>Thống kê</h4><p>Báo cáo doanh thu</p></div></div>
+                    <!-- ĐÃ SỬA: Thêm onclick cho Báo cáo doanh thu -->
+                    <div class="menu-card" onclick="switchView('view-statistics')"><div class="menu-icon bg-green"><i class="fas fa-chart-bar"></i></div><div class="menu-info"><h4>Thống kê</h4><p>Báo cáo doanh thu</p></div></div>
                     <!-- ĐÃ SỬA: Bấm vào Cài đặt sẽ mở Modal Sao lưu/Khôi phục -->
                     <div class="menu-card" onclick="openModal('modal-settings')"><div class="menu-icon bg-slate"><i class="fas fa-cog"></i></div><div class="menu-info"><h4>Cài đặt dữ liệu</h4><p>Sao lưu, Khôi phục</p></div></div>
                 </div>
+            </section>
+
+            <!-- ================= THỐNG KÊ DOANH THU ================= -->
+            <section id="view-statistics" class="view">
+                <div class="top-bar">
+                    <div class="top-bar-title"><h2>📈 Thống kê</h2></div>
+                    <button class="btn-outline-action text-blue" onclick="switchView('view-more')"><i class="fas fa-arrow-left"></i> Quay lại</button>
+                </div>
+                
+                <div class="tuition-summary mb-20">
+                    <div class="ts-box"><p>Doanh thu dự kiến</p><h3 class="text-blue" id="stat-expected">0đ</h3></div>
+                    <div class="ts-box"><p>Thực tế đã thu</p><h3 class="text-green" id="stat-collected">0đ</h3></div>
+                </div>
+
+                <div class="section-title mt-20"><h3>Chi tiết theo nhóm lớp</h3></div>
+                <div id="stat-class-list" class="list-container" style="padding-bottom: 70px;"></div>
             </section>
 
             <!-- ================= DANH SÁCH HỌC SINH ================= -->

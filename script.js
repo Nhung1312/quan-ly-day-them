@@ -173,6 +173,7 @@ function switchView(id, el) {
     if(id === 'view-classes') renderClasses();
     if(id === 'view-students') renderStudents();
     if(id === 'view-tuition') renderTuition();
+    if(id === 'view-statistics') renderStatistics();
     if(id === 'view-calendar') {
         let activeTabBtn = document.querySelector('#view-calendar .tab-btn.active');
         if(activeTabBtn) activeTabBtn.click();
@@ -623,6 +624,73 @@ function parseTableToStudents(rows) {
 
 function confirmImport() { let cid = document.getElementById('import-class-select').value; let count = 0; parsedData.forEach((s, i) => { let finalName = document.getElementById(`imp-name-${i}`).value.trim(); if(finalName) { db.students.push({ id: Date.now() + i, classId: parseInt(cid), name: finalName, phone: document.getElementById(`imp-phone-${i}`).value, customFee: document.getElementById(`imp-fee-${i}`).value, startDate: getTodayStr() }); count++; } }); saveData(); closeModal('modal-import'); renderStudents(); showToast(`🎉 Đã nhập ${count} học sinh!`); }
 
+// ================= THỐNG KÊ & BÁO CÁO =================
+function renderStatistics() {
+    let totalExpected = 0;
+    let totalCollected = 0;
+    
+    // 1. Tính tổng thực tế đã thu
+    db.tuitions.forEach(t => totalCollected += t.amount);
+    
+    // 2. Phân tích chi tiết từng lớp
+    let classStats = {};
+    db.classes.forEach(c => {
+        classStats[c.id] = { name: c.name, expected: 0, collected: 0, stuCount: 0 };
+        let stus = db.students.filter(s => s.classId == c.id);
+        classStats[c.id].stuCount = stus.length;
+        
+        // Tiền dự kiến = (Số buổi học sinh đi học) * (Học phí 1 buổi)
+        stus.forEach(stu => {
+            let fee = parseInt(stu.customFee) || parseInt(c.fee) || 0;
+            let attended = db.attendance.filter(a => a.studentId == stu.id && a.status === 'có mặt').length;
+            classStats[c.id].expected += (attended * fee);
+        });
+    });
+    
+    // Đổ tiền đã thu vào đúng lớp
+    db.tuitions.forEach(t => {
+        if(classStats[t.classId]) {
+            classStats[t.classId].collected += t.amount;
+        }
+    });
+
+    totalExpected = Object.values(classStats).reduce((sum, cls) => sum + cls.expected, 0);
+
+    // 3. Hiển thị ra giao diện
+    document.getElementById('stat-expected').innerText = totalExpected.toLocaleString() + 'đ';
+    document.getElementById('stat-collected').innerText = totalCollected.toLocaleString() + 'đ';
+
+    const list = document.getElementById('stat-class-list');
+    list.innerHTML = '';
+    
+    let sortedClasses = Object.values(classStats).sort((a,b) => b.expected - a.expected);
+    
+    if(sortedClasses.length === 0) {
+        list.innerHTML = '<div class="text-center text-muted" style="padding:20px;">Chưa có dữ liệu lớp học.</div>';
+    } else {
+        sortedClasses.forEach(cls => {
+            let percent = cls.expected > 0 ? Math.round((cls.collected / cls.expected) * 100) : 0;
+            if(percent > 100) percent = 100; // Đóng dư tiền thì max thanh bar vẫn là 100%
+            
+            list.innerHTML += `
+                <div class="list-item" style="flex-direction: column; align-items: stretch; gap: 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <strong style="font-size: 1.05rem; color: var(--text-main);">${cls.name} <span class="text-sm text-muted" style="font-weight:600;">(${cls.stuCount} HS)</span></strong>
+                        <strong class="text-green">+${cls.collected.toLocaleString()}đ</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--text-muted); font-weight:700;">
+                        <span>Kỳ vọng: ${cls.expected.toLocaleString()}đ</span>
+                        <span>Đạt: ${percent}%</span>
+                    </div>
+                    <div style="width: 100%; background: #e2e8f0; height: 8px; border-radius: 4px; overflow: hidden;">
+                        <div style="height: 100%; width: ${percent}%; background: var(--success); transition: 0.5s;"></div>
+                    </div>
+                </div>
+            `;
+        });
+    }
+}
+
 // ================= MỞ KHÓA TOÀN BỘ HÀM CHUẨN XÁC =================
 window.switchView = switchView;
 window.switchCalTab = switchCalTab;
@@ -658,3 +726,4 @@ window.calculateTuitionDue = calculateTuitionDue;
 window.sendZaloBill = sendZaloBill;
 window.openPayModal = openPayModal;
 window.openAddStudentForClass = openAddStudentForClass;
+window.renderStatistics = renderStatistics;
