@@ -132,7 +132,7 @@ async function saveData() {
     if (currentUser) {
         try {
             const docRef = doc(firestoreDb, "DuLieuDayThem", currentUser.uid);
-            await setDoc(docRef, db);
+            await setDoc(docRef, docRef.id, db);
             console.log("☁️ Đã đồng bộ lên mây thành công!");
         } catch (e) {
             console.error("Lỗi khi đồng bộ lên mây: ", e);
@@ -378,15 +378,26 @@ function calculateTuitionDue() {
     return dues;
 }
 
-function sendZaloBill(stuName, className, sessions, amount) {
+// HÀM 1: TỰ ĐỘNG COPY VÀ MỞ KHUNG CHAT ZALO
+function sendZaloBill(stuName, className, sessions, amount, phone) {
     let msg = `[THÔNG BÁO HỌC PHÍ]\nKính gửi Phụ huynh em ${stuName} (Lớp ${className}).\nHiện tại em đã hoàn thành chu kỳ ${sessions} buổi học.\n💰 Số tiền học phí cần đóng là: ${amount.toLocaleString()}đ.\nPhụ huynh vui lòng kiểm tra và chuyển khoản giúp giáo viên nhé. Xin cảm ơn!`;
+    
     navigator.clipboard.writeText(msg).then(() => {
-        showToast("✅ Đã copy tin nhắn! Mở Zalo và Dán (Paste) gửi phụ huynh ngay nhé.");
+        // Kiểm tra xem có số điện thoại không
+        if (phone && phone.trim() !== '') {
+            // Mở thẳng tab chat Zalo của số điện thoại này
+            window.open(`https://zalo.me/${phone}`, '_blank');
+            showToast("✅ Đã copy và mở Zalo! Bạn chỉ cần Dán (Paste) để gửi.");
+        } else {
+            // Nếu học sinh chưa được nhập sđt thì chỉ copy thôi
+            showToast("✅ Đã copy! (Học sinh này chưa có SĐT nên không thể tự mở Zalo)");
+        }
     }).catch(err => {
         showToast("Lỗi copy. Vui lòng thử lại!", "error");
     });
 }
 
+// HÀM 2: TRUYỀN SỐ ĐIỆN THOẠI VÀO NÚT BẤM ZALO
 function renderTuition() {
     let expected = 0, collected = 0; db.tuitions.forEach(t => collected += t.amount);
     
@@ -404,6 +415,7 @@ function renderTuition() {
     
     if(dues.length === 0) { list.innerHTML = '<div class="text-center text-muted" style="padding:40px 20px;">Tất cả học sinh đã đóng đủ học phí!</div>'; }
     dues.forEach(d => {
+        // Điểm nâng cấp: Truyền thêm ${d.student.phone || ''} vào nút bấm
         list.innerHTML += `
             <div class="tuition-card">
                 <div>
@@ -413,7 +425,7 @@ function renderTuition() {
                 <div style="text-align:right;">
                     <h3 class="text-orange" style="margin-bottom:8px;">${d.amount.toLocaleString()}đ</h3>
                     <div style="display:flex; justify-content:flex-end; gap:8px;">
-                        <button class="btn-sm" style="background:#0068ff; color:white; border:none;" onclick="sendZaloBill('${d.student.name}', '${d.cls.name}', ${d.cycle}, ${d.amount})" title="Copy tin nhắn gửi Zalo"><i class="fas fa-comment-dots"></i> Zalo</button>
+                        <button class="btn-sm" style="background:#0068ff; color:white; border:none;" onclick="sendZaloBill('${d.student.name}', '${d.cls.name}', ${d.cycle}, ${d.amount}, '${d.student.phone || ''}')" title="Copy tin nhắn & Mở Zalo"><i class="fas fa-comment-dots"></i> Zalo</button>
                         <button class="btn-sm" style="background:var(--primary); color:white; border:none;" onclick="openPayModal(${d.student.id}, ${d.amount}, ${d.from}, ${d.to})">Thu tiền</button>
                     </div>
                 </div>
