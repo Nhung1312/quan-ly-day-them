@@ -36,29 +36,78 @@ btnLogin.addEventListener('click', () => {
 let currentUser = null; 
 
 // Kiểm tra trạng thái và TẢI DỮ LIỆU TỪ MÂY
+// Kiểm tra trạng thái và TẢI DỮ LIỆU TỪ MÂY (Đã tích hợp thu phí)
 onAuthStateChanged(auth, async (user) => {
     if (user) {
-        currentUser = user; // Lưu lại user
+        currentUser = user;
         loginScreen.style.display = 'none';
         console.log("Đã đăng nhập:", user.email);
 
-        // Kéo dữ liệu từ mây về
-        const docRef = doc(firestoreDb, "DuLieuDayThem", user.uid);
-        const docSnap = await getDoc(docRef);
+        // --- BƯỚC 1: KIỂM TRA BẢN QUYỀN (30 NGÀY) ---
+        const userRef = doc(firestoreDb, 'nguoi_dung', user.uid);
+        let hasAccess = true; // Mặc định là cho phép vào
 
-        if (docSnap.exists()) {
-            db = docSnap.data(); // Cập nhật dữ liệu từ mây
-            console.log("Đã tải dữ liệu từ đám mây thành công!");
-        } else {
-            console.log("Dữ liệu mây trống, tải dữ liệu ở máy lên...");
-            await setDoc(docRef, db);
+        try {
+            const docUserSnap = await getDoc(userRef);
+            const ngayHienTai = new Date();
+
+            if (!docUserSnap.exists()) {
+                // TẠO TÀI KHOẢN MỚI: Tặng ngay 30 ngày
+                let ngayHetHan = new Date();
+                ngayHetHan.setDate(ngayHienTai.getDate() + 30);
+
+                await setDoc(userRef, {
+                    email: user.email,
+                    ngay_dang_ky: ngayHienTai.toISOString(),
+                    ngay_het_han: ngayHetHan.toISOString()
+                });
+                console.log("Tặng 30 ngày trải nghiệm!");
+            } else {
+                // KIỂM TRA TÀI KHOẢN CŨ
+                const duLieu = docUserSnap.data();
+                const ngayHetHan = new Date(duLieu.ngay_het_han);
+
+                if (ngayHienTai > ngayHetHan) {
+                    // ĐÃ QUÁ HẠN -> CHẶN LẠI VÀ HIỆN BẢNG GIÁ
+                    hasAccess = false;
+                    document.getElementById('man-hinh-thu-phi').style.display = 'block';
+
+                    // Điền tên email vào cú pháp chuyển khoản
+                    let emailElements = document.getElementsByClassName('email-user');
+                    for (let i = 0; i < emailElements.length; i++) {
+                        emailElements[i].innerText = user.email.split('@')[0];
+                    }
+                } else {
+                    // CÒN HẠN -> ẨN BẢNG GIÁ ĐI (NẾU ĐANG HIỆN)
+                    document.getElementById('man-hinh-thu-phi').style.display = 'none';
+                    console.log("Tài khoản còn hạn đến: ", ngayHetHan.toLocaleDateString());
+                }
+            }
+        } catch (error) {
+            console.log("Lỗi kiểm tra bản quyền:", error);
         }
 
-        // Tải lại giao diện web (bạn thêm các hàm render giao diện của bạn vào đây nếu cần, ví dụ:)
-        if(typeof updateDashboard === 'function') updateDashboard();
-        if(typeof generateSchedules === 'function') generateSchedules();
+        // --- BƯỚC 2: NẾU CÒN HẠN THÌ MỚI CHO TẢI DỮ LIỆU APP ---
+        if (hasAccess) {
+            // Kéo dữ liệu từ mây về (Giữ nguyên code gốc của bạn)
+            const docRef = doc(firestoreDb, "DuLieuDayThem", user.uid);
+            const docSnap = await getDoc(docRef);
+
+            if (docSnap.exists()) {
+                db = docSnap.data(); // Cập nhật dữ liệu từ mây
+                console.log("Đã tải dữ liệu từ đám mây thành công!");
+            } else {
+                console.log("Dữ liệu mây trống, tải dữ liệu ở máy lên...");
+                await setDoc(docRef, db);
+            }
+
+            // Tải lại giao diện web
+            if (typeof updateDashboard === 'function') updateDashboard();
+            if (typeof generateSchedules === 'function') generateSchedules();
+        }
 
     } else {
+        // CHƯA ĐĂNG NHẬP
         currentUser = null;
         loginScreen.style.display = 'flex';
     }
