@@ -497,8 +497,68 @@ function populateClassSelects() {
 }
 
 // ================= QUẢN LÝ HỌC SINH =================
-function renderStudents() { const list = document.getElementById('student-list'); list.innerHTML = ''; let txt = document.getElementById('search-student').value.toLowerCase(); let cid = document.getElementById('filter-class-stu').value; let filtered = db.students.filter(s => s.name.toLowerCase().includes(txt) && (cid === '' || s.classId == cid)); filtered.forEach(s => { let cls = db.classes.find(c => c.id == s.classId); list.innerHTML += `<div class="list-item"><div class="list-item-info"><strong>${s.name}</strong><small>${cls?cls.name:'Lớp đã xóa'} • ${s.phone||'Không có SĐT'}</small></div><button class="btn-outline-action text-red" onclick="deleteStudent(${s.id})"><i class="fas fa-trash"></i></button></div>`; }); }
-function saveStudent() { let cid = document.getElementById('stu-class').value; let name = document.getElementById('stu-name').value; if(!cid || !name) return showToast("Nhập đủ tên và chọn lớp!", "error"); db.students.push({ id: Date.now(), classId: parseInt(cid), name, phone: document.getElementById('stu-phone').value, customFee: document.getElementById('stu-custom-fee').value, startDate: document.getElementById('stu-start').value || getTodayStr() }); saveData(); closeModal('modal-add-student'); renderStudents(); showToast("Đã thêm học sinh!"); }
+function renderStudents() { 
+    const list = document.getElementById('student-list'); 
+    list.innerHTML = ''; 
+    let txt = document.getElementById('search-student').value.toLowerCase(); 
+    let cid = document.getElementById('filter-class-stu').value; 
+    let filtered = db.students.filter(s => s.name.toLowerCase().includes(txt) && (cid === '' || s.classId == cid)); 
+    
+    filtered.forEach(s => { 
+        let cls = db.classes.find(c => c.id == s.classId); 
+        list.innerHTML += `<div class="list-item">
+            <div class="list-item-info">
+                <strong>${s.name}</strong>
+                <small>${cls ? cls.name : 'Lớp đã xóa'} • ${s.phone || 'Không có SĐT'}</small>
+            </div>
+            <div style="display:flex; gap:8px;">
+                <button class="btn-outline-action text-orange" onclick="editStudent(${s.id})" title="Sửa học sinh"><i class="fas fa-pen"></i></button>
+                <button class="btn-outline-action text-red" onclick="deleteStudent(${s.id})" title="Xóa học sinh"><i class="fas fa-trash"></i></button>
+            </div>
+        </div>`; 
+    }); 
+}
+
+function saveStudent() { 
+    let id = document.getElementById('stu-id').value;
+    let cid = document.getElementById('stu-class').value; 
+    let name = document.getElementById('stu-name').value; 
+    if(!cid || !name) return showToast("Nhập đủ tên và chọn lớp!", "error"); 
+    
+    let obj = { 
+        id: id ? parseInt(id) : Date.now(), 
+        classId: parseInt(cid), 
+        name: name, 
+        phone: document.getElementById('stu-phone').value, 
+        customFee: document.getElementById('stu-custom-fee').value, 
+        startDate: document.getElementById('stu-start').value || getTodayStr() 
+    };
+
+    if(id) {
+        let idx = db.students.findIndex(s => s.id == id);
+        if(idx > -1) db.students[idx] = obj;
+    } else {
+        db.students.push(obj); 
+    }
+
+    saveData(); 
+    closeModal('modal-add-student'); 
+    renderStudents(); 
+    showToast(id ? "Đã cập nhật học sinh!" : "Đã thêm học sinh!"); 
+}
+
+function editStudent(id) {
+    let s = db.students.find(x => x.id == id);
+    if(!s) return;
+    document.getElementById('stu-id').value = s.id;
+    document.getElementById('stu-class').value = s.classId;
+    document.getElementById('stu-name').value = s.name;
+    document.getElementById('stu-phone').value = s.phone || '';
+    document.getElementById('stu-custom-fee').value = s.customFee || '';
+    document.getElementById('stu-start').value = s.startDate || getTodayStr();
+    openModal('modal-add-student');
+}
+
 function deleteStudent(id) { if(confirm("Xóa học sinh này?")) { db.students = db.students.filter(s => s.id != id); saveData(); renderStudents(); } }
 
 // ================= LỊCH NGHỈ =================
@@ -560,6 +620,7 @@ window.saveData = saveData;
 window.updateDashboard = updateDashboard;
 window.deleteStudent = deleteStudent;
 window.saveStudent = saveStudent;
+window.editStudent = editStudent;
 window.editClass = editClass;
 window.deleteClass = deleteClass;
 window.saveClass = saveClass;
