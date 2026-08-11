@@ -11,7 +11,14 @@
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body><!-- MÀN HÌNH ĐĂNG NHẬP -->
+<div id="login-screen" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #f3f4f6; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+    <h2 style="color: #2c3e50; margin-bottom: 10px;">Hệ Thống Quản Lý</h2>
+    <p style="color: #7f8c8d; margin-bottom: 20px;">Vui lòng đăng nhập để đồng bộ dữ liệu</p>
+    <button id="btn-login" style="padding: 12px 24px; font-size: 16px; font-weight: bold; background: #4285F4; color: white; border: none; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+        Đăng nhập bằng Google
+    </button>
+</div>
     <div id="toast-container"></div>
     <div id="loading-overlay" class="hidden"><div class="spinner"></div><p id="loading-text">Đang xử lý...</p></div>
 
@@ -151,6 +158,6 @@
         </div>
     </div>
 
-    <script src="script.js"></script>
+    <script type="module" src="script.js"></script>
 </body>
 </html>

@@ -1,3 +1,70 @@
+// --- HỆ THỐNG FIREBASE ĐĂNG NHẬP ---
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+// Chìa khóa dự án của bạn
+const firebaseConfig = {
+  apiKey: "AIzaSyAQz-4TAujSNhDV8wQY82-wnCTGJtdxhsM",
+  authDomain: "quan-ly-day-them-f7b1e.firebaseapp.com",
+  projectId: "quan-ly-day-them-f7b1e",
+  storageBucket: "quan-ly-day-them-f7b1e.firebasestorage.app",
+  messagingSenderId: "613673074776",
+  appId: "1:613673074776:web:639fe0c51ae83b56a8ca2d"
+};
+
+// Khởi tạo
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const firestoreDb = getFirestore(app);
+const provider = new GoogleAuthProvider();
+
+const loginScreen = document.getElementById('login-screen');
+const btnLogin = document.getElementById('btn-login');
+
+// Bấm nút đăng nhập
+btnLogin.addEventListener('click', () => {
+    signInWithPopup(auth, provider).then((result) => {
+        console.log("Đăng nhập thành công:", result.user.email);
+    }).catch((error) => {
+        alert("Lỗi đăng nhập: " + error.message);
+    });
+});
+
+// Kiểm tra trạng thái: Nếu đã đăng nhập thì ẩn màn hình Login đi
+// Biến lưu trữ tài khoản đang đăng nhập
+let currentUser = null; 
+
+// Kiểm tra trạng thái và TẢI DỮ LIỆU TỪ MÂY
+onAuthStateChanged(auth, async (user) => {
+    if (user) {
+        currentUser = user; // Lưu lại user
+        loginScreen.style.display = 'none';
+        console.log("Đã đăng nhập:", user.email);
+
+        // Kéo dữ liệu từ mây về
+        const docRef = doc(firestoreDb, "DuLieuDayThem", user.uid);
+        const docSnap = await getDoc(docRef);
+
+        if (docSnap.exists()) {
+            db = docSnap.data(); // Cập nhật dữ liệu từ mây
+            console.log("Đã tải dữ liệu từ đám mây thành công!");
+        } else {
+            console.log("Dữ liệu mây trống, tải dữ liệu ở máy lên...");
+            await setDoc(docRef, db);
+        }
+
+        // Tải lại giao diện web (bạn thêm các hàm render giao diện của bạn vào đây nếu cần, ví dụ:)
+        if(typeof updateDashboard === 'function') updateDashboard();
+        if(typeof generateSchedules === 'function') generateSchedules();
+
+    } else {
+        currentUser = null;
+        loginScreen.style.display = 'flex';
+    }
+});
+// ------------------------------------
+
 // ================= DATA STRUCTURE =================
 const defaultData = { classes: [], students: [], holidays: [], sessions: [], attendance: [], tuitions: [] };
 
@@ -6,7 +73,23 @@ let db = stored ? Object.assign({}, defaultData, stored) : defaultData;
 db.classes = db.classes || []; db.students = db.students || []; db.holidays = db.holidays || [];
 db.sessions = db.sessions || []; db.attendance = db.attendance || []; db.tuitions = db.tuitions || [];
 
-function saveData() { localStorage.setItem('tutoringData', JSON.stringify(db)); updateDashboard(); }
+// Nâng cấp hàm saveData: Lưu cả ở máy và trên mây
+async function saveData() {
+    // 1. Vẫn lưu ở máy (để dự phòng và tải nhanh)
+    localStorage.setItem('tutoringData', JSON.stringify(db));
+    updateDashboard(); // Cập nhật lại giao diện như cũ
+
+    // 2. Đẩy dữ liệu lên mây (nếu đang đăng nhập)
+    if (currentUser) {
+        try {
+            const docRef = doc(firestoreDb, "DuLieuDayThem", currentUser.uid);
+            await setDoc(docRef, db);
+            console.log("☁️ Đã đồng bộ lên mây thành công!");
+        } catch (e) {
+            console.error("Lỗi khi đồng bộ lên mây: ", e);
+        }
+    }
+}
 function getTodayStr() { return new Date().toISOString().split('T')[0]; }
 function parseDateVi(dStr) { 
     if(!dStr) return '--/--';
@@ -246,7 +329,6 @@ function calculateTuitionDue() {
     return dues;
 }
 
-// ĐÃ THÊM: Tính năng gửi tin nhắn Zalo đòi tiền
 function sendZaloBill(stuName, className, sessions, amount) {
     let msg = `[THÔNG BÁO HỌC PHÍ]\nKính gửi Phụ huynh em ${stuName} (Lớp ${className}).\nHiện tại em đã hoàn thành chu kỳ ${sessions} buổi học.\n💰 Số tiền học phí cần đóng là: ${amount.toLocaleString()}đ.\nPhụ huynh vui lòng kiểm tra và chuyển khoản giúp giáo viên nhé. Xin cảm ơn!`;
     navigator.clipboard.writeText(msg).then(() => {
@@ -418,4 +500,32 @@ function parseTableToStudents(rows) {
     if(parsedData.length === 0) throw new Error("Không tìm thấy dữ liệu học sinh!"); document.getElementById('import-step-1').classList.add('hidden'); document.getElementById('import-step-2').classList.remove('hidden'); document.getElementById('import-footer').classList.remove('hidden'); let tb = document.getElementById('import-preview-body'); tb.innerHTML = ''; parsedData.forEach((s, i) => { tb.innerHTML += `<tr><td><input type="text" id="imp-name-${i}" value="${s.name}"></td><td><input type="text" id="imp-phone-${i}" value="${s.phone}"></td><td><input type="number" id="imp-fee-${i}" value="${s.customFee}" placeholder="Mặc định"></td></tr>`; });
 }
 
-function confirmImport() { let cid = document.getElementById('import-class-select').value; if(!cid) return showToast("Chưa chọn nhóm lớp!", "error"); let count = 0; parsedData.forEach((s, i) => { let finalName = document.getElementById(`imp-name-${i}`).value.trim(); if(finalName) { db.students.push({ id: Date.now() + i, classId: parseInt(cid), name: finalName, phone: document.getElementById(`imp-phone-${i}`).value, customFee: document.getElementById(`imp-fee-${i}`).value, startDate: getTodayStr() }); count++; } }); saveData(); closeModal('modal-import'); renderStudents(); showToast(`🎉 Đã nhập ${count} học sinh!`); }
+function confirmImport() { let cid = document.getElementById('import-class-select').value; let count = 0; parsedData.forEach((s, i) => { let finalName = document.getElementById(`imp-name-${i}`).value.trim(); if(finalName) { db.students.push({ id: Date.now() + i, classId: parseInt(cid), name: finalName, phone: document.getElementById(`imp-phone-${i}`).value, customFee: document.getElementById(`imp-fee-${i}`).value, startDate: getTodayStr() }); count++; } }); saveData(); closeModal('modal-import'); renderStudents(); showToast(`🎉 Đã nhập ${count} học sinh!`); }
+
+// ================= MỞ KHÓA TOÀN BỘ HÀM CHUẨN XÁC =================
+window.switchView = switchView;
+window.switchCalTab = switchCalTab;
+window.openModal = openModal;
+window.closeModal = closeModal;
+window.saveData = saveData;
+window.updateDashboard = updateDashboard;
+window.deleteStudent = deleteStudent;
+window.saveStudent = saveStudent;
+window.editClass = editClass;
+window.deleteClass = deleteClass;
+window.saveClass = saveClass;
+window.generateSchedules = generateSchedules;
+window.addTkbRow = addTkbRow;
+window.backupData = backupData;
+window.restoreData = restoreData;
+window.openAddHoliday = openAddHoliday;
+window.openImportModal = openImportModal;
+window.handleImportFile = handleImportFile;
+window.confirmImport = confirmImport;
+window.editHoliday = editHoliday;
+window.deleteHoliday = deleteHoliday;
+window.saveHoliday = saveHoliday;
+window.deleteSession = deleteSession;
+window.saveMakeup = saveMakeup;
+window.deleteTuition = deleteTuition;
+window.confirmPayment = confirmPayment;
