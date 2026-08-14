@@ -1,9 +1,8 @@
 // --- HỆ THỐNG FIREBASE ĐĂNG NHẬP ---
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-// Chìa khóa dự án của bạn
 const firebaseConfig = {
   apiKey: "AIzaSyAQz-4TAujSNhDV8wQY82-wnCTGJtdxhsM",
   authDomain: "quan-ly-day-them-f7b1e.firebaseapp.com",
@@ -13,7 +12,6 @@ const firebaseConfig = {
   appId: "1:613673074776:web:639fe0c51ae83b56a8ca2d"
 };
 
-// Khởi tạo
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const firestoreDb = getFirestore(app);
@@ -22,7 +20,6 @@ const provider = new GoogleAuthProvider();
 const loginScreen = document.getElementById('login-screen');
 const btnLogin = document.getElementById('btn-login');
 
-// Bấm nút đăng nhập
 btnLogin.addEventListener('click', () => {
     signInWithPopup(auth, provider).then((result) => {
         console.log("Đăng nhập thành công:", result.user.email);
@@ -31,28 +28,22 @@ btnLogin.addEventListener('click', () => {
     });
 });
 
-// Kiểm tra trạng thái: Nếu đã đăng nhập thì ẩn màn hình Login đi
-// Biến lưu trữ tài khoản đang đăng nhập
 let currentUser = null; 
 
-// Kiểm tra trạng thái và TẢI DỮ LIỆU TỪ MÂY
-// Kiểm tra trạng thái và TẢI DỮ LIỆU TỪ MÂY (Đã tích hợp thu phí)
 onAuthStateChanged(auth, async (user) => {
     if (user) {
         currentUser = user;
         loginScreen.style.display = 'none';
         console.log("Đã đăng nhập:", user.email);
 
-        // --- BƯỚC 1: KIỂM TRA BẢN QUYỀN (30 NGÀY) ---
         const userRef = doc(firestoreDb, 'nguoi_dung', user.uid);
-        let hasAccess = true; // Mặc định là cho phép vào
+        let hasAccess = true; 
 
         try {
             const docUserSnap = await getDoc(userRef);
             const ngayHienTai = new Date();
 
             if (!docUserSnap.exists()) {
-                // TẠO TÀI KHOẢN MỚI: Tặng ngay 30 ngày
                 let ngayHetHan = new Date();
                 ngayHetHan.setDate(ngayHienTai.getDate() + 30);
 
@@ -63,22 +54,18 @@ onAuthStateChanged(auth, async (user) => {
                 });
                 console.log("Tặng 30 ngày trải nghiệm!");
             } else {
-                // KIỂM TRA TÀI KHOẢN CŨ
                 const duLieu = docUserSnap.data();
                 const ngayHetHan = new Date(duLieu.ngay_het_han);
 
                 if (ngayHienTai > ngayHetHan) {
-                    // ĐÃ QUÁ HẠN -> CHẶN LẠI VÀ HIỆN BẢNG GIÁ
                     hasAccess = false;
                     document.getElementById('man-hinh-thu-phi').style.display = 'block';
 
-                    // Điền tên email vào cú pháp chuyển khoản
                     let emailElements = document.getElementsByClassName('email-user');
                     for (let i = 0; i < emailElements.length; i++) {
                         emailElements[i].innerText = user.email.split('@')[0];
                     }
                 } else {
-                    // CÒN HẠN -> ẨN BẢNG GIÁ ĐI (NẾU ĐANG HIỆN)
                     document.getElementById('man-hinh-thu-phi').style.display = 'none';
                     console.log("Tài khoản còn hạn đến: ", ngayHetHan.toLocaleDateString());
                 }
@@ -87,32 +74,39 @@ onAuthStateChanged(auth, async (user) => {
             console.log("Lỗi kiểm tra bản quyền:", error);
         }
 
-        // --- BƯỚC 2: NẾU CÒN HẠN THÌ MỚI CHO TẢI DỮ LIỆU APP ---
         if (hasAccess) {
-            // Kéo dữ liệu từ mây về (Giữ nguyên code gốc của bạn)
             const docRef = doc(firestoreDb, "DuLieuDayThem", user.uid);
             const docSnap = await getDoc(docRef);
 
             if (docSnap.exists()) {
-                db = docSnap.data(); // Cập nhật dữ liệu từ mây
+                db = docSnap.data(); 
                 console.log("Đã tải dữ liệu từ đám mây thành công!");
             } else {
                 console.log("Dữ liệu mây trống, tải dữ liệu ở máy lên...");
                 await setDoc(docRef, db);
             }
 
-            // Tải lại giao diện web
             if (typeof updateDashboard === 'function') updateDashboard();
             if (typeof generateSchedules === 'function') generateSchedules();
+            if (typeof renderClasses === 'function') renderClasses();
         }
 
     } else {
-        // CHƯA ĐĂNG NHẬP
         currentUser = null;
         loginScreen.style.display = 'flex';
     }
 });
-// ------------------------------------
+
+// TÍNH NĂNG ĐĂNG XUẤT 
+window.logoutApp = function() {
+    if(confirm("Bạn có chắc chắn muốn đăng xuất khỏi thiết bị này?")) {
+        signOut(auth).then(() => {
+            // Đã sửa lại đúng key localStorage của App Dạy Thêm
+            localStorage.removeItem('tutoringData'); 
+            location.reload();
+        });
+    }
+};
 
 // ================= DATA STRUCTURE =================
 const defaultData = { classes: [], students: [], holidays: [], sessions: [], attendance: [], tuitions: [] };
@@ -122,13 +116,10 @@ let db = stored ? Object.assign({}, defaultData, stored) : defaultData;
 db.classes = db.classes || []; db.students = db.students || []; db.holidays = db.holidays || [];
 db.sessions = db.sessions || []; db.attendance = db.attendance || []; db.tuitions = db.tuitions || [];
 
-// Nâng cấp hàm saveData: Lưu cả ở máy và trên mây
 async function saveData() {
-    // 1. Vẫn lưu ở máy (để dự phòng và tải nhanh)
     localStorage.setItem('tutoringData', JSON.stringify(db));
-    updateDashboard(); // Cập nhật lại giao diện như cũ
+    updateDashboard(); 
 
-    // 2. Đẩy dữ liệu lên mây (nếu đang đăng nhập)
     if (currentUser) {
         try {
             const docRef = doc(firestoreDb, "DuLieuDayThem", currentUser.uid);
@@ -150,8 +141,6 @@ function parseDateVi(dStr) {
 
 window.onload = () => { 
     generateSchedules(); updateDashboard(); renderClasses(); populateClassSelects(); 
-    
-    // KÍCH HOẠT PWA - CHO PHÉP CÀI ĐẶT APP
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('sw.js').catch(err => console.log('SW registration failed:', err));
     }
@@ -379,18 +368,14 @@ function calculateTuitionDue() {
     return dues;
 }
 
-// HÀM 1: TỰ ĐỘNG COPY VÀ MỞ KHUNG CHAT ZALO
 function sendZaloBill(stuName, className, sessions, amount, phone) {
     let msg = `[THÔNG BÁO HỌC PHÍ]\nKính gửi Phụ huynh em ${stuName} (Lớp ${className}).\nHiện tại em đã hoàn thành chu kỳ ${sessions} buổi học.\n💰 Số tiền học phí cần đóng là: ${amount.toLocaleString()}đ.\nPhụ huynh vui lòng kiểm tra và chuyển khoản giúp giáo viên nhé. Xin cảm ơn!`;
     
     navigator.clipboard.writeText(msg).then(() => {
-        // Kiểm tra xem có số điện thoại không
         if (phone && phone.trim() !== '') {
-            // Mở thẳng tab chat Zalo của số điện thoại này
             window.open(`https://zalo.me/${phone}`, '_blank');
             showToast("✅ Đã copy và mở Zalo! Bạn chỉ cần Dán (Paste) để gửi.");
         } else {
-            // Nếu học sinh chưa được nhập sđt thì chỉ copy thôi
             showToast("✅ Đã copy! (Học sinh này chưa có SĐT nên không thể tự mở Zalo)");
         }
     }).catch(err => {
@@ -398,7 +383,6 @@ function sendZaloBill(stuName, className, sessions, amount, phone) {
     });
 }
 
-// HÀM 2: TRUYỀN SỐ ĐIỆN THOẠI VÀO NÚT BẤM ZALO
 function renderTuition() {
     let expected = 0, collected = 0; db.tuitions.forEach(t => collected += t.amount);
     
@@ -416,7 +400,6 @@ function renderTuition() {
     
     if(dues.length === 0) { list.innerHTML = '<div class="text-center text-muted" style="padding:40px 20px;">Tất cả học sinh đã đóng đủ học phí!</div>'; }
     dues.forEach(d => {
-        // Điểm nâng cấp: Truyền thêm ${d.student.phone || ''} vào nút bấm
         list.innerHTML += `
             <div class="tuition-card">
                 <div>
@@ -481,7 +464,18 @@ function openAddStudentForClass(cid) { document.getElementById('stu-id').value =
 
 function renderClasses() {
     const list = document.getElementById('class-list'); list.innerHTML = '';
-    db.classes.forEach(c => {
+    
+    // TÍNH NĂNG TÌM KIẾM NHÓM LỚP
+    const searchInput = document.getElementById('search-class');
+    const filterText = searchInput ? searchInput.value.toLowerCase() : "";
+    
+    let filteredClasses = db.classes.filter(c => c.name.toLowerCase().includes(filterText));
+    
+    if(filteredClasses.length === 0) {
+        list.innerHTML = '<div class="text-center text-muted" style="padding:20px;">Không tìm thấy nhóm lớp nào!</div>';
+    }
+    
+    filteredClasses.forEach(c => {
         let stuCount = db.students.filter(s => s.classId == c.id).length; let tkbText = c.tkb.map(t => `T${t.dayOfWeek}(${t.start})`).join(', ');
         let classSessions = db.sessions.filter(x => x.classId == c.id && x.status !== 'canceled').sort((a,b) => { let d1 = new Date(a.date).getTime(), d2 = new Date(b.date).getTime(); if(d1 !== d2) return d1 - d2; return String(a.start||"").localeCompare(String(b.start||"")); });
         let completedCount = classSessions.filter(s => s.status === 'completed').length; let cycle = parseInt(c.cycle) || 10; let nextTargetIndex = Math.floor(completedCount / cycle) * cycle + cycle; 
@@ -639,7 +633,6 @@ function renderStatistics() {
         let stus = db.students.filter(s => s.classId == c.id);
         classStats[c.id].stuCount = stus.length;
         
-        // Tiền dự kiến = (Số buổi học sinh đi học) * (Học phí 1 buổi)
         stus.forEach(stu => {
             let fee = parseInt(stu.customFee) || parseInt(c.fee) || 0;
             let attended = db.attendance.filter(a => a.studentId == stu.id && a.status === 'có mặt').length;
@@ -647,7 +640,6 @@ function renderStatistics() {
         });
     });
     
-    // Đổ tiền đã thu vào đúng lớp
     db.tuitions.forEach(t => {
         if(classStats[t.classId]) {
             classStats[t.classId].collected += t.amount;
@@ -656,7 +648,6 @@ function renderStatistics() {
 
     totalExpected = Object.values(classStats).reduce((sum, cls) => sum + cls.expected, 0);
 
-    // 3. Hiển thị ra giao diện
     document.getElementById('stat-expected').innerText = totalExpected.toLocaleString() + 'đ';
     document.getElementById('stat-collected').innerText = totalCollected.toLocaleString() + 'đ';
 
@@ -670,7 +661,7 @@ function renderStatistics() {
     } else {
         sortedClasses.forEach(cls => {
             let percent = cls.expected > 0 ? Math.round((cls.collected / cls.expected) * 100) : 0;
-            if(percent > 100) percent = 100; // Đóng dư tiền thì max thanh bar vẫn là 100%
+            if(percent > 100) percent = 100; 
             
             list.innerHTML += `
                 <div class="list-item" style="flex-direction: column; align-items: stretch; gap: 10px;">
@@ -698,6 +689,8 @@ window.openModal = openModal;
 window.closeModal = closeModal;
 window.saveData = saveData;
 window.updateDashboard = updateDashboard;
+window.renderClasses = renderClasses;
+window.renderStudents = renderStudents;
 window.deleteStudent = deleteStudent;
 window.saveStudent = saveStudent;
 window.editStudent = editStudent;
