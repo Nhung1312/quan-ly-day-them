@@ -57,7 +57,11 @@ onAuthStateChanged(auth, async (user) => {
                 const duLieu = docUserSnap.data();
                 const ngayHetHan = new Date(duLieu.ngay_het_han);
 
-                if (ngayHienTai > ngayHetHan) {
+                // TÍNH SỐ NGÀY CÒN LẠI
+                const timeDiff = ngayHetHan.getTime() - ngayHienTai.getTime();
+                const daysLeft = Math.ceil(timeDiff / (1000 * 3600 * 24));
+
+                if (daysLeft <= 0) {
                     hasAccess = false;
                     document.getElementById('man-hinh-thu-phi').style.display = 'block';
 
@@ -68,6 +72,17 @@ onAuthStateChanged(auth, async (user) => {
                 } else {
                     document.getElementById('man-hinh-thu-phi').style.display = 'none';
                     console.log("Tài khoản còn hạn đến: ", ngayHetHan.toLocaleDateString());
+
+                    // CẢNH BÁO KHI CÒN <= 5 NGÀY
+                    if (daysLeft <= 5) {
+                        const banner = document.getElementById('trial-warning-banner');
+                        if (banner) {
+                            banner.style.display = 'flex';
+                            document.getElementById('trial-days-left').innerText = daysLeft;
+                            const upgradePrefix = document.getElementById('upgrade-email-prefix');
+                            if (upgradePrefix) upgradePrefix.innerText = user.email.split('@')[0];
+                        }
+                    }
                 }
             }
         } catch (error) {
@@ -101,7 +116,6 @@ onAuthStateChanged(auth, async (user) => {
 window.logoutApp = function() {
     if(confirm("Bạn có chắc chắn muốn đăng xuất khỏi thiết bị này?")) {
         signOut(auth).then(() => {
-            // Đã sửa lại đúng key localStorage của App Dạy Thêm
             localStorage.removeItem('tutoringData'); 
             location.reload();
         });
