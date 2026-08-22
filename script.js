@@ -108,21 +108,26 @@ onAuthStateChanged(auth, async (user) => {
     }
 });
 
-window.logoutApp = function() {
+function logoutApp() {
     if(confirm("Bạn có chắc chắn muốn đăng xuất khỏi thiết bị này?")) {
         signOut(auth).then(() => {
             localStorage.removeItem('tutoringData'); 
             location.reload();
         });
     }
-};
+}
 
+// ================= DỮ LIỆU LOCAL & ĐỒNG BỘ =================
 const defaultData = { classes: [], students: [], holidays: [], sessions: [], attendance: [], tuitions: [] };
 
 let stored = JSON.parse(localStorage.getItem('tutoringData'));
 let db = stored ? Object.assign({}, defaultData, stored) : defaultData;
-db.classes = db.classes || []; db.students = db.students || []; db.holidays = db.holidays || [];
-db.sessions = db.sessions || []; db.attendance = db.attendance || []; db.tuitions = db.tuitions || [];
+db.classes = db.classes || []; 
+db.students = db.students || []; 
+db.holidays = db.holidays || [];
+db.sessions = db.sessions || []; 
+db.attendance = db.attendance || []; 
+db.tuitions = db.tuitions || [];
 
 async function saveData() {
     localStorage.setItem('tutoringData', JSON.stringify(db));
@@ -138,6 +143,8 @@ async function saveData() {
         }
     }
 }
+
+// ================= TIỆN ÍCH =================
 function getTodayStr() { return new Date().toISOString().split('T')[0]; }
 function parseDateVi(dStr) { 
     if(!dStr) return '--/--';
@@ -148,15 +155,21 @@ function parseDateVi(dStr) {
 }
 
 window.onload = () => { 
-    generateSchedules(); updateDashboard(); renderClasses(); populateClassSelects(); 
+    generateSchedules(); 
+    updateDashboard(); 
+    renderClasses(); 
+    populateClassSelects(); 
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('sw.js').catch(err => console.log('SW registration failed:', err));
     }
 };
 
 function showToast(msg, type='success') {
-    const box = document.getElementById('toast-container'); const t = document.createElement('div'); t.className = `toast ${type}`;
-    t.innerHTML = `<i class="fas ${type==='success'?'fa-check-circle':'fa-exclamation-circle'}"></i> <span>${msg}</span>`; box.appendChild(t);
+    const box = document.getElementById('toast-container'); 
+    const t = document.createElement('div'); 
+    t.className = `toast ${type}`;
+    t.innerHTML = `<i class="fas ${type==='success'?'fa-check-circle':'fa-exclamation-circle'}"></i> <span>${msg}</span>`; 
+    box.appendChild(t);
     setTimeout(() => { t.style.opacity='0'; setTimeout(()=>t.remove(), 300); }, 2500);
 }
 
@@ -164,7 +177,10 @@ function switchView(id, el) {
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
     document.getElementById(id).classList.add('active');
     
-    if(el) { document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active')); el.classList.add('active'); }
+    if(el) { 
+        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active')); 
+        el.classList.add('active'); 
+    }
     
     if(id === 'view-home') updateDashboard();
     if(id === 'view-classes') renderClasses();
@@ -180,8 +196,12 @@ function switchView(id, el) {
 
 function openModal(id) { document.getElementById(id).style.display = 'flex'; }
 function closeModal(id) { document.getElementById(id).style.display = 'none'; }
-function showLoading(show, text="Đang xử lý...") { document.getElementById('loading-text').innerText = text; document.getElementById('loading-overlay').classList.toggle('hidden', !show); }
+function showLoading(show, text="Đang xử lý...") { 
+    document.getElementById('loading-text').innerText = text; 
+    document.getElementById('loading-overlay').classList.toggle('hidden', !show); 
+}
 
+// ================= LỊCH HỌC & ĐIỀU HƯỚNG =================
 function switchCalTab(tabId, el) {
     document.querySelectorAll('#view-calendar .tab-btn').forEach(btn => btn.classList.remove('active'));
     el.classList.add('active');
@@ -222,7 +242,14 @@ function saveMakeup() {
     saveData(); closeModal('modal-add-makeup'); renderMakeups(); showToast("✅ Đã thêm lịch dạy bù vào Hệ thống!");
 }
 
-function deleteSession(id) { if(confirm("Xóa lịch dạy bù này?")) { db.sessions = db.sessions.filter(s => String(s.id) !== String(id)); saveData(); renderMakeups(); showToast("Đã xóa lịch bù!"); } }
+function deleteSession(id) { 
+    if(confirm("Xóa lịch dạy bù này?")) { 
+        db.sessions = db.sessions.filter(s => String(s.id) !== String(id)); 
+        saveData(); 
+        renderMakeups(); 
+        showToast("Đã xóa lịch bù!"); 
+    } 
+}
 
 function renderMonthClasses() {
     const list = document.getElementById('month-list'); list.innerHTML = '';
@@ -276,6 +303,7 @@ function generateSchedules() {
     saveData(); 
 }
 
+// ================= TRANG TỔNG QUAN (DASHBOARD) =================
 function updateDashboard() {
     db.sessions = db.sessions.filter(s => db.classes.some(c => c.id == s.classId)); 
     db.students = db.students.filter(s => db.classes.some(c => c.id == s.classId)); 
@@ -284,7 +312,6 @@ function updateDashboard() {
     
     document.getElementById('dash-total-classes').innerText = db.classes.length; 
     
-    // Đếm số học sinh đang học (bỏ qua nghỉ ngang)
     let activeStudents = db.students.filter(s => s.status !== 'inactive').length;
     document.getElementById('dash-total-students').innerText = activeStudents;
     
@@ -328,12 +355,13 @@ function updateDashboard() {
     });
 }
 
+// ================= ĐIỂM DANH =================
+let currentAttSessionId = null;
 function openAttendance(sessionId, className) {
     currentAttSessionId = String(sessionId); const session = db.sessions.find(s => String(s.id) === currentAttSessionId);
     if(!session) return showToast("Không tìm thấy dữ liệu buổi học!", "error");
     document.getElementById('att-class-name').innerText = className; document.getElementById('att-date-info').innerText = `${parseDateVi(session.date)} (${session.start||'--:--'} - ${session.end||'--:--'})`;
     
-    // Bỏ qua học sinh đã nghỉ ngang
     let stus = db.students.filter(s => s.classId == session.classId && s.status !== 'inactive'); 
     let html = '';
     
@@ -370,10 +398,11 @@ function submitAttendance() {
     } catch(err) { showToast("Lỗi: " + err.message, "error"); }
 }
 
+// ================= HỌC PHÍ & XUẤT EXCEL =================
 function calculateTuitionDue() {
     let dues = [];
     db.students.forEach(stu => {
-        if(stu.status === 'inactive') return; // Bỏ qua học sinh đã nghỉ ngang
+        if(stu.status === 'inactive') return; 
         
         let cls = db.classes.find(c => c.id == stu.classId); if(!cls) return;
         let attended = db.attendance.filter(a => a.studentId == stu.id && a.status === 'có mặt').length;
@@ -398,16 +427,14 @@ function sendZaloBill(stuName, className, sessions, amount, phone) {
         } else {
             showToast("✅ Đã copy! (Học sinh này chưa có SĐT nên không thể tự mở Zalo)");
         }
-    }).catch(err => {
-        showToast("Lỗi copy. Vui lòng thử lại!", "error");
-    });
+    }).catch(err => { showToast("Lỗi copy. Vui lòng thử lại!", "error"); });
 }
 
 function renderTuition() {
     let expected = 0, collected = 0; db.tuitions.forEach(t => collected += t.amount);
     
     db.students.forEach(stu => {
-        if(stu.status === 'inactive') return; // Bỏ qua hs nghỉ ngang trong báo cáo tổng quan
+        if(stu.status === 'inactive') return; 
         let cls = db.classes.find(c => c.id == stu.classId);
         if(cls) {
             let attended = db.attendance.filter(a => a.studentId == stu.id && a.status === 'có mặt').length;
@@ -462,51 +489,6 @@ function renderTuition() {
     }
 }
 
-// ================= XUẤT EXCEL CHUẨN XÁC BAO GỒM CẢ HỌC SINH ĐÃ NGHỈ =================
-function exportTuitionExcel() {
-    let excelData = [];
-    excelData.push(["STT", "Họ và tên", "Số điện thoại", "Lớp", "Trạng thái", "Số buổi đã học", "Số buổi đã thu", "Số buổi nợ", "Tiền cần nộp (VNĐ)"]);
-
-    let index = 1;
-    // Quét toàn bộ danh sách, kể cả bạn đã nghỉ
-    db.students.forEach(stu => {
-        let cls = db.classes.find(c => c.id == stu.classId);
-        if(!cls) return;
-
-        let attended = db.attendance.filter(a => a.studentId == stu.id && a.status === 'có mặt').length;
-        let paidSessions = 0; 
-        db.tuitions.filter(t => t.studentId == stu.id).forEach(t => paidSessions += (t.toSession - t.fromSession + 1));
-        
-        let unpaid = attended - paidSessions;
-        let fee = parseInt(stu.customFee) || parseInt(cls.fee) || 0;
-        let amount = unpaid * fee;
-
-        let statusText = (stu.status === 'inactive') ? "Đã nghỉ ngang" : "Đang học";
-
-        excelData.push([
-            index++, 
-            stu.name, 
-            stu.phone || "", 
-            cls.name, 
-            statusText,
-            attended,
-            paidSessions,
-            unpaid > 0 ? unpaid : 0, 
-            amount > 0 ? amount : 0
-        ]);
-    });
-
-    let wb = XLSX.utils.book_new();
-    let ws = XLSX.utils.aoa_to_sheet(excelData);
-    // Căn chỉnh độ rộng cột
-    ws['!cols'] = [{wch: 5}, {wch: 25}, {wch: 15}, {wch: 15}, {wch: 18}, {wch: 15}, {wch: 15}, {wch: 15}, {wch: 20}];
-    XLSX.utils.book_append_sheet(wb, ws, "BaoCaoHocPhi");
-    
-    let thangHienTai = new Date().getMonth() + 1;
-    XLSX.writeFile(wb, `DanhSachThuTien_Thang${thangHienTai}.xlsx`);
-    showToast("✅ Đã xuất báo cáo Excel thành công!");
-}
-
 function deleteTuition(id) {
     if(confirm("Hủy bỏ giao dịch thu tiền này? (Tiền sẽ bị trừ khỏi tổng Đã thu)")) {
         db.tuitions = db.tuitions.filter(t => t.id != id); saveData(); renderTuition(); showToast("Đã hủy giao dịch!");
@@ -525,6 +507,49 @@ function confirmPayment() {
     saveData(); closeModal('modal-pay-tuition'); renderTuition(); showToast("✅ Đã ghi nhận thu tiền thành công!");
 }
 
+function exportTuitionExcel() {
+    let excelData = [];
+    excelData.push(["STT", "Họ và tên", "Số điện thoại", "Lớp", "Trạng thái", "Ngày vào học", "Số buổi nợ", "Tiền cần nộp (VNĐ)"]);
+
+    let index = 1;
+    db.students.forEach(stu => {
+        let cls = db.classes.find(c => c.id == stu.classId);
+        if(!cls) return;
+
+        let attended = db.attendance.filter(a => a.studentId == stu.id && a.status === 'có mặt').length;
+        let paidSessions = 0; 
+        db.tuitions.filter(t => t.studentId == stu.id).forEach(t => paidSessions += (t.toSession - t.fromSession + 1));
+        
+        let unpaid = attended - paidSessions;
+        let fee = parseInt(stu.customFee) || parseInt(cls.fee) || 0;
+        let amount = unpaid * fee;
+
+        let statusText = (stu.status === 'inactive') ? "Đã nghỉ ngang" : "Đang học";
+        let startDateStr = stu.startDate ? parseDateVi(stu.startDate) : "--/--";
+
+        excelData.push([
+            index++, 
+            stu.name, 
+            stu.phone || "", 
+            cls.name, 
+            statusText,
+            startDateStr,
+            unpaid > 0 ? unpaid : 0, 
+            amount > 0 ? amount : 0
+        ]);
+    });
+
+    let wb = XLSX.utils.book_new();
+    let ws = XLSX.utils.aoa_to_sheet(excelData);
+    ws['!cols'] = [{wch: 5}, {wch: 25}, {wch: 15}, {wch: 15}, {wch: 18}, {wch: 15}, {wch: 15}, {wch: 20}];
+    XLSX.utils.book_append_sheet(wb, ws, "BaoCaoHocPhi");
+    
+    let thangHienTai = new Date().getMonth() + 1;
+    XLSX.writeFile(wb, `BaoCao_HocPhi_Thang${thangHienTai}.xlsx`);
+    showToast("✅ Đã xuất báo cáo Excel thành công!");
+}
+
+// ================= LỚP HỌC & HỌC SINH =================
 function renderClasses() {
     const list = document.getElementById('class-list'); list.innerHTML = '';
     const searchInput = document.getElementById('search-class');
@@ -547,7 +572,7 @@ function renderClasses() {
     populateClassSelects();
 }
 
-function deleteClass(id) { if(confirm("CẢNH BÁO ĐỎ: Xóa nhóm lớp sẽ XÓA VĨNH VIỄN toàn bộ dữ liệu của lớp này. Bạn chắc chắn chứ?")) { db.classes = db.classes.filter(c => c.id != id); saveData(); renderClasses(); showToast("Đã xóa nhóm lớp!"); } }
+function deleteClass(id) { if(confirm("CẢNH BÁO: Xóa nhóm lớp sẽ XÓA VĨNH VIỄN toàn bộ dữ liệu. Bạn chắc chắn chứ?")) { db.classes = db.classes.filter(c => c.id != id); saveData(); renderClasses(); showToast("Đã xóa nhóm lớp!"); } }
 function addTkbRow(day=2, start='18:00', end='20:00') { const div = document.createElement('div'); div.className = 'form-row tkb-row mb-15'; div.style.alignItems = 'center'; div.innerHTML = `<select class="tkb-day" style="flex: 1; padding: 12px 5px; text-align: center; min-width: 60px;"><option value="2">T2</option><option value="3">T3</option><option value="4">T4</option><option value="5">T5</option><option value="6">T6</option><option value="7">T7</option><option value="8">CN</option></select><input type="time" class="tkb-start" value="${start}" style="flex: 1.2; padding: 12px 5px; text-align: center;"><input type="time" class="tkb-end" value="${end}" style="flex: 1.2; padding: 12px 5px; text-align: center;"><button class="btn-outline-action text-red" style="flex-shrink: 0; width: 44px; height: 44px; padding: 0;" onclick="this.parentElement.remove()"><i class="fas fa-trash"></i></button>`; div.querySelector('.tkb-day').value = day; document.getElementById('tkb-container').appendChild(div); }
 function saveClass() { let id = document.getElementById('class-id').value; let name = document.getElementById('cl-name').value; let fee = document.getElementById('cl-fee').value; let cycle = document.getElementById('cl-cycle').value; let start = document.getElementById('cl-start').value; if(!name || !start) return showToast("Nhập đủ thông tin!", "error"); let tkb = []; document.querySelectorAll('.tkb-row').forEach(row => { tkb.push({ dayOfWeek: parseInt(row.querySelector('.tkb-day').value), start: row.querySelector('.tkb-start').value, end: row.querySelector('.tkb-end').value }); }); let obj = { id: id ? parseInt(id) : Date.now(), name, fee, cycle, startDate: start, tkb }; if(id) db.classes[db.classes.findIndex(c => c.id == id)] = obj; else db.classes.push(obj); saveData(); closeModal('modal-add-class'); renderClasses(); generateSchedules(); showToast("Đã lưu Nhóm!"); }
 function editClass(id) { let c = db.classes.find(x => x.id == id); if(!c) return; document.getElementById('class-id').value = c.id; document.getElementById('cl-name').value = c.name; document.getElementById('cl-fee').value = c.fee; document.getElementById('cl-cycle').value = c.cycle; document.getElementById('cl-start').value = c.startDate; document.getElementById('tkb-container').innerHTML = ''; c.tkb.forEach(t => addTkbRow(t.dayOfWeek, t.start, t.end)); openModal('modal-add-class'); }
@@ -562,7 +587,12 @@ function populateClassSelects() {
     const formMakeup = document.getElementById('makeup-class'); if(formMakeup) formMakeup.innerHTML = htmlForm;
 }
 
-// BỔ SUNG QUẢN LÝ NGHỈ NGANG
+function openAddStudentForClass(cid) { 
+    let cls = db.classes.find(c => c.id == cid);
+    document.getElementById('stu-id').value = ''; document.getElementById('stu-name').value = ''; document.getElementById('stu-phone').value = ''; document.getElementById('stu-custom-fee').value = ''; document.getElementById('stu-start').value = cls ? cls.startDate : getTodayStr(); document.getElementById('stu-class').value = cid; 
+    openModal('modal-add-student'); 
+}
+
 function renderStudents() { 
     const list = document.getElementById('student-list'); list.innerHTML = ''; 
     let txt = document.getElementById('search-student') ? document.getElementById('search-student').value.toLowerCase() : ''; 
@@ -624,6 +654,24 @@ function editStudent(id) {
 
 function deleteStudent(id) { if(confirm("Xóa học sinh này? Sẽ bị xóa mọi lịch sử giao dịch.")) { db.students = db.students.filter(s => s.id != id); saveData(); renderStudents(); } }
 
+// ================= SAO LƯU & IMPORT =================
+function backupData() {
+    let dataStr = JSON.stringify(db); let blob = new Blob([dataStr], {type: "application/json"}); let url = URL.createObjectURL(blob); let a = document.createElement('a'); a.href = url; let date = new Date().toISOString().split('T')[0]; a.download = `DuLieuDayThem_${date}.json`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); showToast("Đã tải bản sao lưu (File .json) xuống máy!");
+}
+
+function restoreData(event) {
+    let file = event.target.files[0]; if(!file) return; let reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            let parsed = JSON.parse(e.target.result);
+            if(parsed.classes && parsed.students) { 
+                if(confirm("CẢNH BÁO: Dữ liệu hiện tại trên trình duyệt sẽ bị GHI ĐÈ hoàn toàn bởi dữ liệu từ file này. Bạn có chắc chắn muốn khôi phục?")) { db = parsed; saveData(); closeModal('modal-settings'); alert("Khôi phục thành công! Nhấn OK để tải lại ứng dụng."); location.reload(); }
+            } else { showToast("File khôi phục không hợp lệ!", "error"); }
+        } catch(err) { showToast("Lỗi đọc file!", "error"); }
+    };
+    reader.readAsText(file); event.target.value = ''; 
+}
+
 let parsedData = [];
 function openImportModal() { if(db.classes.length === 0) { showToast("Bạn cần TẠO NHÓM LỚP trước khi Import!", "error"); switchView('view-classes', document.querySelectorAll('.nav-item')[1]); return; } document.getElementById('import-step-1').classList.remove('hidden'); document.getElementById('import-step-2').classList.add('hidden'); document.getElementById('import-footer').classList.add('hidden'); openModal('modal-import'); }
 async function handleImportFile(event) { const file = event.target.files[0]; if(!file) return; const ext = file.name.split('.').pop().toLowerCase(); showLoading(true, "Đang trích xuất dữ liệu..."); parsedData = []; try { if(ext === 'xlsx' || ext === 'xls' || ext === 'csv') { await extractExcel(file); } else if (ext === 'docx') { await extractWord(file); } else if (ext === 'png' || ext === 'jpg' || ext === 'jpeg') { await extractImageOCR(file); } else { throw new Error("Định dạng không hỗ trợ!"); } } catch (e) { showToast(e.message || "Lỗi xử lý file!", "error"); } showLoading(false); event.target.value = ''; }
@@ -643,6 +691,7 @@ function confirmImport() {
     saveData(); closeModal('modal-import'); renderStudents(); showToast(`🎉 Đã nhập ${count} học sinh!`); 
 }
 
+// ================= THỐNG KÊ DOANH THU =================
 function renderStatistics() {
     let totalExpected = 0; let totalCollected = 0; db.tuitions.forEach(t => totalCollected += t.amount);
     let classStats = {};
@@ -668,4 +717,43 @@ function renderStatistics() {
     }
 }
 
-window.switchView = switchView; window.switchCalTab = switchCalTab; window.openModal = openModal; window.closeModal = closeModal; window.saveData = saveData; window.updateDashboard = updateDashboard; window.renderClasses = renderClasses; window.renderStudents = renderStudents; window.deleteStudent = deleteStudent; window.saveStudent = saveStudent; window.editStudent = editStudent; window.toggleStudentStatus = toggleStudentStatus; window.editClass = editClass; window.deleteClass = deleteClass; window.saveClass = saveClass; window.generateSchedules = generateSchedules; window.addTkbRow = addTkbRow; window.backupData = backupData; window.restoreData = restoreData; window.openAddHoliday = openAddHoliday; window.openImportModal = openImportModal; window.handleImportFile = handleImportFile; window.confirmImport = confirmImport; window.editHoliday = editHoliday; window.deleteHoliday = deleteHoliday; window.saveHoliday = saveHoliday; window.deleteSession = deleteSession; window.saveMakeup = saveMakeup; window.deleteTuition = deleteTuition; window.confirmPayment = confirmPayment; window.openAttendance = openAttendance; window.setAtt = setAtt; window.submitAttendance = submitAttendance; window.calculateTuitionDue = calculateTuitionDue; window.sendZaloBill = sendZaloBill; window.openPayModal = openPayModal; window.openAddStudentForClass = openAddStudentForClass; window.renderStatistics = renderStatistics; window.exportTuitionExcel = exportTuitionExcel;
+// ================= GẮN HÀM VÀO WINDOW =================
+window.switchView = switchView; 
+window.switchCalTab = switchCalTab; 
+window.openModal = openModal; 
+window.closeModal = closeModal; 
+window.saveData = saveData; 
+window.updateDashboard = updateDashboard; 
+window.renderClasses = renderClasses; 
+window.renderStudents = renderStudents; 
+window.deleteStudent = deleteStudent; 
+window.saveStudent = saveStudent; 
+window.editStudent = editStudent; 
+window.toggleStudentStatus = toggleStudentStatus; 
+window.editClass = editClass; 
+window.deleteClass = deleteClass; 
+window.saveClass = saveClass; 
+window.generateSchedules = generateSchedules; 
+window.addTkbRow = addTkbRow; 
+window.backupData = backupData; 
+window.restoreData = restoreData; 
+window.openAddHoliday = openAddHoliday; 
+window.openImportModal = openImportModal; 
+window.handleImportFile = handleImportFile; 
+window.confirmImport = confirmImport; 
+window.editHoliday = editHoliday; 
+window.deleteHoliday = deleteHoliday; 
+window.saveHoliday = saveHoliday; 
+window.deleteSession = deleteSession; 
+window.saveMakeup = saveMakeup; 
+window.deleteTuition = deleteTuition; 
+window.confirmPayment = confirmPayment; 
+window.openAttendance = openAttendance; 
+window.setAtt = setAtt; 
+window.submitAttendance = submitAttendance; 
+window.calculateTuitionDue = calculateTuitionDue; 
+window.sendZaloBill = sendZaloBill; 
+window.openPayModal = openPayModal; 
+window.openAddStudentForClass = openAddStudentForClass; 
+window.renderStatistics = renderStatistics; 
+window.exportTuitionExcel = exportTuitionExcel;
