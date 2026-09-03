@@ -12,28 +12,54 @@ const firebaseConfig = {
   appId: "1:613673074776:web:639fe0c51ae83b56a8ca2d"
 };
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const firestoreDb = getFirestore(app);
-const provider = new GoogleAuthProvider();
+let app = null;
+let auth = null;
+let firestoreDb = null;
+let provider = null;
+
+try {
+    app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    firestoreDb = getFirestore(app);
+    provider = new GoogleAuthProvider();
+} catch (err) {
+    console.warn("Firebase initialization warning:", err);
+}
 
 const loginScreen = document.getElementById('login-screen');
 const btnLogin = document.getElementById('btn-login');
+const btnGuest = document.getElementById('btn-guest');
 
-btnLogin.addEventListener('click', () => {
-    signInWithPopup(auth, provider).then((result) => {
-        console.log("Đăng nhập thành công:", result.user.email);
-    }).catch((error) => {
-        alert("Lỗi đăng nhập: " + error.message);
+if (btnGuest && loginScreen) {
+    btnGuest.addEventListener('click', () => {
+        loginScreen.style.display = 'none';
+        if (typeof updateDashboard === 'function') updateDashboard();
+        if (typeof generateSchedules === 'function') generateSchedules();
+        if (typeof renderClasses === 'function') renderClasses();
     });
-});
+}
+
+if (btnLogin && auth && provider) {
+    btnLogin.addEventListener('click', () => {
+        signInWithPopup(auth, provider).then((result) => {
+            console.log("Đăng nhập thành công:", result.user.email);
+        }).catch((error) => {
+            try {
+                alert("Lỗi đăng nhập: " + error.message);
+            } catch (e) {
+                console.error("Lỗi đăng nhập:", error);
+            }
+        });
+    });
+}
 
 let currentUser = null; 
 
+if (auth) {
 onAuthStateChanged(auth, async (user) => {
     if (user) {
         currentUser = user;
-        loginScreen.style.display = 'none';
+        if (loginScreen) loginScreen.style.display = 'none';
         console.log("Đã đăng nhập:", user.email);
 
         const userRef = doc(firestoreDb, 'nguoi_dung', user.uid);
@@ -85,13 +111,25 @@ onAuthStateChanged(auth, async (user) => {
 
     } else {
         currentUser = null;
-        loginScreen.style.display = 'flex';
+        if (loginScreen) loginScreen.style.display = 'flex';
     }
 });
+}
 
 function logoutApp() {
-    if(confirm("Bạn có chắc chắn muốn đăng xuất khỏi thiết bị này?")) {
-        signOut(auth).then(() => { localStorage.removeItem('tutoringData'); location.reload(); });
+    let ok = false;
+    try {
+        ok = confirm("Bạn có chắc chắn muốn đăng xuất khỏi thiết bị này?");
+    } catch (e) {
+        ok = true;
+    }
+    if(ok) {
+        if (auth) {
+            signOut(auth).then(() => { localStorage.removeItem('tutoringData'); location.reload(); }).catch(() => { location.reload(); });
+        } else {
+            localStorage.removeItem('tutoringData');
+            location.reload();
+        }
     }
 }
 
@@ -149,7 +187,18 @@ function switchView(id, el) {
     }
 }
 
-function openModal(id) { document.getElementById(id).style.display = 'flex'; }
+function openModal(id) { 
+    if (id === 'modal-zalo-settings') {
+        let settings = getZaloSettings();
+        if (document.getElementById('bank-select')) document.getElementById('bank-select').value = settings.bank;
+        if (document.getElementById('bank-account')) document.getElementById('bank-account').value = settings.accountNumber;
+        if (document.getElementById('bank-holder')) document.getElementById('bank-holder').value = settings.accountHolder;
+        if (document.getElementById('teacher-zalo-phone')) document.getElementById('teacher-zalo-phone').value = settings.teacherZalo;
+        if (document.getElementById('zalo-template')) document.getElementById('zalo-template').value = settings.template;
+        if (typeof updateTeacherQrPreviews === 'function') updateTeacherQrPreviews();
+    }
+    document.getElementById(id).style.display = 'flex'; 
+}
 function closeModal(id) { document.getElementById(id).style.display = 'none'; }
 function showLoading(show, text="Đang xử lý...") { document.getElementById('loading-text').innerText = text; document.getElementById('loading-overlay').classList.toggle('hidden', !show); }
 
@@ -300,6 +349,8 @@ function updateDashboard() {
 
 // ================= ĐIỂM DANH =================
 let currentAttSessionId = null;
+let currentAbsenceZaloPayload = null;
+
 function openAttendance(sessionId, className) {
     currentAttSessionId = String(sessionId); const session = db.sessions.find(s => String(s.id) === currentAttSessionId);
     if(!session) return showToast("Không tìm thấy dữ liệu buổi học!", "error");
@@ -315,18 +366,68 @@ function openAttendance(sessionId, className) {
     
     stus.forEach(stu => {
         let record = db.attendance.find(a => String(a.sessionId) === currentAttSessionId && a.studentId == stu.id);
-        let status = record ? record.status : 'có mặt'; let cl = status === 'vắng' ? 'vắng' : (status === 'phép' ? 'phép' : '');
-        html += `<div class="att-student ${cl}" id="att-row-${stu.id}"><div class="att-name">${stu.name}</div><div class="att-actions"><button class="att-btn ${status==='có mặt'?'active có mặt':''}" onclick="setAtt(${stu.id}, 'có mặt')"><i class="fas fa-check"></i></button><button class="att-btn ${status==='phép'?'active phép':''}" onclick="setAtt(${stu.id}, 'phép')">P</button><button class="att-btn ${status==='vắng'?'active vắng':''}" onclick="setAtt(${stu.id}, 'vắng')"><i class="fas fa-times"></i></button></div></div>`;
+        let status = record ? record.status : 'có mặt'; 
+        let cl = status === 'vắng' ? 'vắng' : (status === 'phép' ? 'phép' : '');
+        let isAbsent = status === 'vắng' || status === 'phép';
+        let btnText = status === 'phép' ? 'Nhắn Zalo (Nghỉ phép)' : 'Báo Zalo phụ huynh';
+        let btnColor = status === 'phép' ? '#d97706' : '#ef4444';
+        let btnBg = status === 'phép' ? '#fffbeb' : '#fef2f2';
+        let btnBorder = status === 'phép' ? '#fde68a' : '#fecaca';
+
+        html += `
+        <div class="att-student ${cl}" id="att-row-${stu.id}">
+            <div style="display: flex; flex-direction: column; gap: 4px; padding-left: 5px; flex: 1; min-width: 0;">
+                <div class="att-name" style="padding-left: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${stu.name}</div>
+                <div id="att-zalo-wrap-${stu.id}" style="display: ${isAbsent ? 'block' : 'none'};">
+                    <button type="button" class="btn-att-zalo-quick" id="att-zalo-btn-${stu.id}" onclick="openAbsenceZaloModal(${stu.id})" style="color: ${btnColor}; background: ${btnBg}; border-color: ${btnBorder};" title="Nhắn Zalo thông báo phụ huynh">
+                        <i class="fas fa-comment-dots"></i> <span id="att-zalo-text-${stu.id}">${btnText}</span>
+                    </button>
+                </div>
+            </div>
+            <div class="att-actions" style="flex-shrink: 0;">
+                <button type="button" class="att-btn ${status==='có mặt'?'active có mặt':''}" onclick="setAtt(${stu.id}, 'có mặt')" title="Có mặt"><i class="fas fa-check"></i></button>
+                <button type="button" class="att-btn ${status==='phép'?'active phép':''}" onclick="setAtt(${stu.id}, 'phép')" title="Nghỉ có phép">P</button>
+                <button type="button" class="att-btn ${status==='vắng'?'active vắng':''}" onclick="setAtt(${stu.id}, 'vắng')" title="Vắng không phép"><i class="fas fa-times"></i></button>
+            </div>
+        </div>`;
     });
     document.getElementById('att-student-list').innerHTML = html; openModal('modal-attendance');
 }
 
 function setAtt(stuId, status) {
-    const row = document.getElementById(`att-row-${stuId}`); row.className = `att-student ${status === 'có mặt' ? '' : status}`;
-    const btns = row.querySelectorAll('.att-btn'); btns.forEach(b => b.className = 'att-btn');
-    if(status==='có mặt') btns[0].classList.add('active', 'có', 'mặt'); if(status==='phép') btns[1].classList.add('active', 'phép'); if(status==='vắng') btns[2].classList.add('active', 'vắng');
+    const row = document.getElementById(`att-row-${stuId}`); 
+    if (row) row.className = `att-student ${status === 'có mặt' ? '' : status}`;
+    const btns = row ? row.querySelectorAll('.att-btn') : []; 
+    btns.forEach(b => b.className = 'att-btn');
+    if(status==='có mặt' && btns[0]) btns[0].classList.add('active', 'có', 'mặt'); 
+    if(status==='phép' && btns[1]) btns[1].classList.add('active', 'phép'); 
+    if(status==='vắng' && btns[2]) btns[2].classList.add('active', 'vắng');
+    
+    // Cập nhật hiển thị nút Zalo báo vắng
+    const zaloWrap = document.getElementById(`att-zalo-wrap-${stuId}`);
+    const zaloBtn = document.getElementById(`att-zalo-btn-${stuId}`);
+    const zaloText = document.getElementById(`att-zalo-text-${stuId}`);
+    if (zaloWrap && zaloBtn && zaloText) {
+        if (status === 'vắng') {
+            zaloWrap.style.display = 'block';
+            zaloText.innerText = 'Báo Zalo phụ huynh';
+            zaloBtn.style.color = '#ef4444';
+            zaloBtn.style.background = '#fef2f2';
+            zaloBtn.style.borderColor = '#fecaca';
+        } else if (status === 'phép') {
+            zaloWrap.style.display = 'block';
+            zaloText.innerText = 'Nhắn Zalo (Nghỉ phép)';
+            zaloBtn.style.color = '#d97706';
+            zaloBtn.style.background = '#fffbeb';
+            zaloBtn.style.borderColor = '#fde68a';
+        } else {
+            zaloWrap.style.display = 'none';
+        }
+    }
+
     let exist = db.attendance.find(a => String(a.sessionId) === currentAttSessionId && a.studentId == stuId);
-    if(exist) exist.status = status; else db.attendance.push({ sessionId: currentAttSessionId, studentId: stuId, status: status });
+    if(exist) exist.status = status; 
+    else db.attendance.push({ sessionId: currentAttSessionId, studentId: stuId, status: status });
 }
 
 function submitAttendance() {
@@ -342,76 +443,603 @@ function submitAttendance() {
     } catch(err) { showToast("Lỗi: " + err.message, "error"); }
 }
 
-// ================= HỌC PHÍ & ZALO =================
+function openAbsenceZaloModal(studentId) {
+    let stu = db.students.find(s => s.id == studentId);
+    if (!stu) return showToast("Không tìm thấy học sinh!", "error");
+    
+    let session = db.sessions.find(s => String(s.id) === String(currentAttSessionId));
+    let cls = session ? db.classes.find(c => c.id == session.classId) : null;
+    let className = cls ? cls.name : 'Lớp học';
+    
+    let record = db.attendance.find(a => String(a.sessionId) === String(currentAttSessionId) && a.studentId == stu.id);
+    let status = record ? record.status : 'vắng';
+
+    let cleanPhone = cleanPhoneNumber(stu.phone);
+    let targetInfoText = `${stu.name} • ${className} • ${cleanPhone ? `SĐT: ${cleanPhone}` : '⚠️ Chưa có SĐT'}`;
+    
+    let targetEl = document.getElementById('zalo-absence-target-info');
+    if (targetEl) targetEl.innerText = targetInfoText;
+    
+    let dateStr = session ? parseDateVi(session.date) : 'Hôm nay';
+    let timeStr = session && session.start ? `${session.start} - ${session.end || ''}` : '';
+    let fullDateTime = timeStr ? `${dateStr} (${timeStr})` : dateStr;
+
+    let msg = "";
+    if (status === 'phép') {
+        msg = `[THÔNG BÁO NGHỈ HỌC CÓ PHÉP]\nKính gửi Quý Phụ huynh em ${stu.name} (${className}),\n\nThầy/Cô xin xác nhận: Buổi học ${fullDateTime}, em ${stu.name} nghỉ học có phép.\nThầy/Cô nhắn tin để Quý Phụ huynh nắm được thông tin chuyên cần của em. Nếu cần sắp xếp lịch học bù, Quý Phụ huynh vui lòng liên hệ Thầy/Cô nhé.\n\nThầy/Cô xin cảm ơn Quý Phụ huynh!`;
+    } else {
+        msg = `[THÔNG BÁO HỌC SINH VẮNG HỌC]\nKính gửi Quý Phụ huynh em ${stu.name} (${className}),\n\nThầy/Cô xin thông báo: Buổi học ${fullDateTime}, em ${stu.name} vắng mặt.\nThầy/Cô nhắn tin để Quý Phụ huynh nắm được tình hình học tập của em.\nQuý Phụ huynh vui lòng liên hệ Thầy/Cô nếu cần sắp xếp lịch học bù hoặc trao đổi thêm nhé.\n\nThầy/Cô xin cảm ơn Quý Phụ huynh!`;
+    }
+
+    let txtEl = document.getElementById('zalo-absence-text');
+    if (txtEl) txtEl.value = msg;
+
+    currentAbsenceZaloPayload = {
+        phone: cleanPhone,
+        studentName: stu.name
+    };
+
+    openModal('modal-zalo-absence');
+}
+
+function copyAbsenceZaloText() {
+    const txtEl = document.getElementById('zalo-absence-text');
+    if (!txtEl) return;
+    navigator.clipboard.writeText(txtEl.value).then(() => {
+        showToast("📋 Đã sao chép tin nhắn báo vắng!");
+    }).catch(err => {
+        showToast("Lỗi sao chép!", "error");
+    });
+}
+
+function executeSendAbsenceZalo() {
+    const txtEl = document.getElementById('zalo-absence-text');
+    const text = txtEl ? txtEl.value : '';
+    let phone = currentAbsenceZaloPayload ? currentAbsenceZaloPayload.phone : '';
+
+    navigator.clipboard.writeText(text).then(() => {
+        if (phone && phone !== '') {
+            window.open(`https://zalo.me/${phone}`, '_blank');
+            showToast(`✅ Đã copy & mở Zalo Phụ huynh em ${currentAbsenceZaloPayload ? currentAbsenceZaloPayload.studentName : ''}! Bạn chỉ cần Dán (Ctrl+V) để gửi.`);
+        } else {
+            window.open('https://chat.zalo.me', '_blank');
+            showToast("✅ Đã copy tin nhắn! (Học sinh chưa có SĐT, đã mở Zalo Web để bạn tìm kiếm)");
+        }
+    }).catch(err => {
+        showToast("Lỗi sao chép! Vui lòng thử lại.", "error");
+    });
+}
+
+// ================= HỌC PHÍ, ĐA KỲ & KẾT NỐI ZALO (KÈM QR GIÁO VIÊN) =================
+const DEFAULT_ZALO_TEMPLATE = `[THÔNG BÁO HỌC PHÍ]
+Kính gửi Quý Phụ huynh em {ten_hs} ({ten_lop}),
+Thầy/Cô xin gửi thông báo học phí của em:
+📌 Chi tiết: {cac_ky_no}
+💰 Tổng tiền cần đóng: {tong_tien}đ
+
+🏦 Thông tin chuyển khoản:
+- Chủ tài khoản: {chu_tai_khoan}
+- Số tài khoản: {so_tai_khoan}
+- Ngân hàng: {ngan_hang}
+- Nội dung CK: {noi_dung_ck}
+
+Thầy/Cô có đính kèm ảnh mã QR thanh toán của Thầy/Cô để Quý Phụ huynh quét chuyển khoản thuận tiện và chính xác.
+Kính mong Quý Phụ huynh sớm hoàn tất học phí cho em. Thầy/Cô xin chân thành cảm ơn Quý Phụ huynh!`;
+
+function getZaloSettings() {
+    db.settings = db.settings || {};
+    return {
+        bank: db.settings.bank || 'Vietcombank',
+        accountNumber: db.settings.accountNumber || '',
+        accountHolder: db.settings.accountHolder || '',
+        teacherZalo: db.settings.teacherZalo || '',
+        teacherQrImage: db.settings.teacherQrImage || '',
+        template: db.settings.zaloTemplate || DEFAULT_ZALO_TEMPLATE
+    };
+}
+
+function getTeacherQrSrc() {
+    let settings = getZaloSettings();
+    return settings.teacherQrImage || '';
+}
+
+function updateTeacherQrPreviews() {
+    let qrSrc = getTeacherQrSrc();
+    let settings = getZaloSettings();
+
+    // Trong modal Cài đặt QR & Ngân hàng
+    const uploadBox = document.getElementById('teacher-qr-upload-box');
+    const previewBox = document.getElementById('teacher-qr-preview-box');
+    const settingsImg = document.getElementById('teacher-qr-settings-img');
+    if (uploadBox && previewBox && settingsImg) {
+        if (qrSrc) {
+            uploadBox.style.display = 'none';
+            previewBox.style.display = 'block';
+            settingsImg.src = qrSrc;
+        } else {
+            uploadBox.style.display = 'block';
+            previewBox.style.display = 'none';
+            settingsImg.src = '';
+        }
+    }
+
+    // Trong modal gửi Zalo từng học sinh
+    const sendQrActive = document.getElementById('zalo-teacher-qr-active');
+    const sendQrEmpty = document.getElementById('zalo-teacher-qr-empty');
+    const sendQrPreview = document.getElementById('zalo-teacher-qr-preview');
+    if (sendQrActive && sendQrEmpty && sendQrPreview) {
+        if (qrSrc) {
+            sendQrActive.style.display = 'block';
+            sendQrEmpty.style.display = 'none';
+            sendQrPreview.src = qrSrc;
+        } else {
+            sendQrActive.style.display = 'none';
+            sendQrEmpty.style.display = 'block';
+            sendQrPreview.src = '';
+        }
+    }
+
+    // Trong modal xuất bảng nợ Zalo cả lớp
+    const batchQrCont = document.getElementById('zalo-batch-qr-container');
+    const batchQrEmpty = document.getElementById('zalo-batch-qr-empty');
+    const batchQrPreview = document.getElementById('zalo-batch-qr-preview');
+    if (batchQrCont && batchQrEmpty && batchQrPreview) {
+        if (qrSrc) {
+            batchQrCont.style.display = 'block';
+            batchQrEmpty.style.display = 'none';
+            batchQrPreview.src = qrSrc;
+        } else {
+            batchQrCont.style.display = 'none';
+            batchQrEmpty.style.display = 'block';
+            batchQrPreview.src = '';
+        }
+    }
+
+    // Cập nhật text STK, tên chủ tài khoản
+    let holderEl = document.getElementById('zalo-preview-holder');
+    if (holderEl) holderEl.innerText = settings.accountHolder || '(Chưa điền tên Thầy/Cô)';
+    let accEl = document.getElementById('zalo-preview-account');
+    if (accEl) accEl.innerText = settings.accountNumber || '(Chưa điền STK)';
+    let bankEl = document.getElementById('zalo-preview-bank');
+    if (bankEl) bankEl.innerText = settings.bank || 'Ngân hàng';
+
+    let bHolder = document.getElementById('zalo-batch-holder');
+    if (bHolder) bHolder.innerText = settings.accountHolder || '(Chưa điền tên Thầy/Cô)';
+    let bAcc = document.getElementById('zalo-batch-account');
+    if (bAcc) bAcc.innerText = settings.accountNumber || '(Chưa điền STK)';
+    let bBank = document.getElementById('zalo-batch-bank');
+    if (bBank) bBank.innerText = settings.bank || 'Ngân hàng';
+}
+
+function handleTeacherQrUpload(event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+        return showToast("Vui lòng chọn file hình ảnh (JPG, PNG, WEBP)!", "error");
+    }
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const img = new Image();
+        img.onload = function() {
+            // Nén ảnh vừa vặn tối đa 650x650 px để mã QR cực nét mà dung lượng nhẹ (<60KB)
+            const canvas = document.createElement('canvas');
+            let maxDim = 650;
+            let width = img.width;
+            let height = img.height;
+            if (width > maxDim || height > maxDim) {
+                if (width > height) {
+                    height = Math.round((height * maxDim) / width);
+                    width = maxDim;
+                } else {
+                    width = Math.round((width * maxDim) / height);
+                    height = maxDim;
+                }
+            }
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+            const compressed = canvas.toDataURL('image/jpeg', 0.88);
+
+            db.settings = db.settings || {};
+            db.settings.teacherQrImage = compressed;
+            saveData();
+            updateTeacherQrPreviews();
+            showToast("✅ Đã lưu ảnh mã QR của Thầy/Cô thành công!");
+        };
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+function removeTeacherQr() {
+    if (confirm("Bạn có chắc chắn muốn xóa ảnh mã QR hiện tại của Giáo viên?")) {
+        db.settings = db.settings || {};
+        delete db.settings.teacherQrImage;
+        saveData();
+        updateTeacherQrPreviews();
+        showToast("Đã xóa ảnh mã QR!");
+    }
+}
+
+function downloadTeacherQr() {
+    let qrSrc = getTeacherQrSrc();
+    if (!qrSrc) {
+        return showToast("Thầy/Cô chưa tải ảnh mã QR lên!", "error");
+    }
+    const a = document.createElement('a');
+    a.href = qrSrc;
+    a.download = 'Ma_QR_Giao_Vien.jpg';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    showToast("Đang tải ảnh mã QR về máy...");
+}
+
+async function copyTeacherQrImage() {
+    let qrSrc = getTeacherQrSrc();
+    if (!qrSrc) return showToast("Thầy/Cô chưa tải ảnh mã QR lên!", "error");
+
+    try {
+        const res = await fetch(qrSrc);
+        const blob = await res.blob();
+        if (navigator.clipboard && window.ClipboardItem) {
+            await navigator.clipboard.write([
+                new ClipboardItem({ 'image/png': blob })
+            ]);
+            showToast("📋 Đã copy ảnh mã QR! Bạn có thể Dán (Ctrl+V) vào Zalo.");
+        } else {
+            downloadTeacherQr();
+        }
+    } catch(e) {
+        downloadTeacherQr();
+    }
+}
+
+function copyAccountNumber() {
+    let settings = getZaloSettings();
+    if (!settings.accountNumber) return showToast("Chưa có số tài khoản!", "error");
+    navigator.clipboard.writeText(settings.accountNumber).then(() => {
+        showToast("📋 Đã copy STK: " + settings.accountNumber);
+    });
+}
+
+function saveZaloSettings() {
+    db.settings = db.settings || {};
+    db.settings.bank = document.getElementById('bank-select').value;
+    db.settings.accountNumber = document.getElementById('bank-account').value.trim();
+    db.settings.accountHolder = document.getElementById('bank-holder').value.trim();
+    db.settings.teacherZalo = document.getElementById('teacher-zalo-phone').value.trim();
+    db.settings.zaloTemplate = document.getElementById('zalo-template').value.trim() || DEFAULT_ZALO_TEMPLATE;
+    
+    saveData();
+    closeModal('modal-zalo-settings');
+    updateTeacherQrPreviews();
+    showToast("✅ Đã lưu cấu hình QR & Tài khoản Thầy/Cô thành công!");
+    renderTuition();
+}
+
+function resetZaloTemplate() {
+    document.getElementById('zalo-template').value = DEFAULT_ZALO_TEMPLATE;
+    showToast("Đã khôi phục mẫu tin mặc định!");
+}
+
+function cleanPhoneNumber(phone) {
+    if (!phone) return '';
+    let p = String(phone).replace(/[^0-9]/g, '');
+    if (p.startsWith('84')) p = '0' + p.slice(2);
+    return p;
+}
+
+function removeVietnameseTones(str) {
+    if (!str) return '';
+    str = str.replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g,"a"); 
+    str = str.replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g,"e"); 
+    str = str.replace(/ì|í|ị|ỉ|ĩ/g,"i"); 
+    str = str.replace(/ò|ó|ọ|ỏ|õ|ô|ồ|ố|ộ|ổ|ỗ|ơ|ờ|ớ|ợ|ở|ỡ/g,"o"); 
+    str = str.replace(/ù|ú|ụ|ủ|ũ|ư|ừ|ứ|ự|ử|ữ/g,"u"); 
+    str = str.replace(/ỳ|ý|ỵ|ỷ|ỹ/g,"y"); 
+    str = str.replace(/đ/g,"d");
+    str = str.replace(/À|Á|Ạ|Ả|Ã|Â|Ầ|Ấ|Ậ|Ẩ|Ẫ|Ă|Ằ|Ắ|Ặ|Ẳ|Ẵ/g, "A");
+    str = str.replace(/È|É|Ẹ|Ẻ|Ẽ|Ê|Ề|Ế|Ệ|Ể|Ễ/g, "E");
+    str = str.replace(/Ì|Í|Ị|Ỉ|Ĩ/g, "I");
+    str = str.replace(/Ò|Ó|Ọ|Ỏ|Õ|Ô|Ồ|Ố|Ộ|Ổ|Ỗ|Ơ|Ờ|Ớ|Ợ|Ở|Ỡ/g, "O");
+    str = str.replace(/Ù|Ú|Ụ|Ủ|Ũ|Ư|Ừ|Ứ|Ự|Ử|Ữ/g, "U");
+    str = str.replace(/Ỳ|Ý|Ỵ|Ỷ|Ỹ/g, "Y");
+    str = str.replace(/Đ/g, "D");
+    return str.replace(/[^a-zA-Z0-9 ]/g, '').trim();
+}
+
+// Tính toán chi tiết tiến độ và tình trạng từng Kỳ của học sinh
+function getStudentTuitionInfo(stu) {
+    let cls = db.classes.find(c => c.id == stu.classId);
+    if (!cls) return null;
+
+    let cycle = parseInt(cls.cycle) || 10;
+    let fee = parseInt(stu.customFee) || parseInt(cls.fee) || 0;
+    let attended = db.attendance.filter(a => a.studentId == stu.id && a.status === 'có mặt').length;
+    
+    let paidSessions = 0;
+    db.tuitions.filter(t => t.studentId == stu.id).forEach(t => {
+        paidSessions += (t.toSession - t.fromSession + 1);
+    });
+
+    let unpaid = attended - paidSessions;
+    let maxSession = Math.max(attended, paidSessions);
+    let totalCycles = Math.max(1, Math.ceil(maxSession / cycle));
+
+    let cycles = [];
+    let unpaidCycles = [];
+
+    for (let k = 1; k <= totalCycles; k++) {
+        let fromS = (k - 1) * cycle + 1;
+        let toS = k * cycle;
+
+        let isPaid = paidSessions >= toS;
+        let isCompletedAttended = attended >= toS;
+        let attendedInCycle = 0;
+        if (attended >= toS) {
+            attendedInCycle = cycle;
+        } else if (attended >= fromS) {
+            attendedInCycle = attended - fromS + 1;
+        }
+
+        let isOverdue = !isPaid && (attended > toS || (k < totalCycles && isCompletedAttended));
+        let isDue = !isPaid && isCompletedAttended;
+        let isCurrent = !isPaid && !isCompletedAttended && attended >= fromS;
+
+        let cycleObj = {
+            cycleNumber: k,
+            fromSession: fromS,
+            toSession: toS,
+            cycleSize: cycle,
+            attendedInCycle: attendedInCycle,
+            isPaid: isPaid,
+            isCompletedAttended: isCompletedAttended,
+            isOverdue: isOverdue,
+            isDue: isDue,
+            isCurrent: isCurrent,
+            amount: cycle * fee,
+            status: isPaid ? 'paid' : (isOverdue ? 'overdue' : (isDue ? 'due' : (isCurrent ? 'in_progress' : 'upcoming')))
+        };
+        cycles.push(cycleObj);
+
+        if (!isPaid && isCompletedAttended) {
+            unpaidCycles.push(cycleObj);
+        }
+    }
+
+    let isMultiDebt = unpaidCycles.length > 1;
+    let hasOverdue = cycles.some(c => c.isOverdue);
+    let totalUnpaidAmount = unpaid > 0 ? (unpaid * fee) : 0;
+    let dueAmount = unpaidCycles.reduce((sum, c) => sum + c.amount, 0);
+
+    return {
+        student: stu,
+        cls: cls,
+        cycleSize: cycle,
+        fee: fee,
+        attended: attended,
+        paidSessions: paidSessions,
+        unpaid: unpaid,
+        totalCycles: totalCycles,
+        cycles: cycles,
+        unpaidCycles: unpaidCycles,
+        isMultiDebt: isMultiDebt,
+        hasOverdue: hasOverdue,
+        totalUnpaidAmount: totalUnpaidAmount,
+        dueAmount: dueAmount > 0 ? dueAmount : totalUnpaidAmount,
+        isInactive: stu.status === 'inactive'
+    };
+}
+
 function calculateTuitionDue() {
     let dues = [];
     db.students.forEach(stu => {
-        // Ẩn học sinh nghỉ ngang khỏi màn hình học phí
-        if(stu.status === 'inactive') return;
+        let info = getStudentTuitionInfo(stu);
+        if (!info) return;
 
-        let cls = db.classes.find(c => c.id == stu.classId); if(!cls) return;
-        let attended = db.attendance.filter(a => a.studentId == stu.id && a.status === 'có mặt').length;
-        let paidSessions = 0; db.tuitions.filter(t => t.studentId == stu.id).forEach(t => paidSessions += (t.toSession - t.fromSession + 1));
-        
-        let unpaid = attended - paidSessions; let target = parseInt(cls.cycle) || 10;
-        if(unpaid >= target && target > 0) {
-            let fee = parseInt(stu.customFee) || parseInt(cls.fee) || 0;
-            dues.push({ student: stu, cls: cls, unpaidCount: unpaid, amount: target * fee, from: paidSessions + 1, to: paidSessions + target, cycle: target });
+        // Nếu học sinh đã nghỉ và không còn nợ thì bỏ qua
+        if (info.isInactive && info.unpaid <= 0) return;
+
+        // Báo nợ nếu: có kỳ chưa nộp, hoặc số buổi nợ đạt mốc chu kỳ, hoặc có nợ tồn từ kỳ trước
+        if (info.unpaidCycles.length > 0 || info.unpaid >= info.cycleSize || (info.unpaid > 0 && info.hasOverdue)) {
+            dues.push(info);
         }
     });
     return dues;
 }
 
-function sendZaloBill(stuName, className, sessions, amount, phone) {
-    let msg = `[THÔNG BÁO HỌC PHÍ]\nKính gửi Phụ huynh em ${stuName} (Lớp ${className}).\nHiện tại em đã hoàn thành chu kỳ ${sessions} buổi học.\n💰 Số tiền học phí cần đóng là: ${amount.toLocaleString()}đ.\nPhụ huynh vui lòng kiểm tra và chuyển khoản giúp giáo viên nhé. Xin cảm ơn!`;
-    
-    navigator.clipboard.writeText(msg).then(() => {
-        if (phone && phone.trim() !== '') {
-            window.open(`https://zalo.me/${phone}`, '_blank');
-            showToast("✅ Đã copy và mở Zalo! Bạn chỉ cần Dán (Paste) để gửi.");
-        } else {
-            showToast("✅ Đã copy! (Học sinh này chưa có SĐT nên không thể tự mở Zalo)");
-        }
-    }).catch(err => {
-        showToast("Lỗi copy. Vui lòng thử lại!", "error");
-    });
+let currentTuitionTab = 'due';
+function setTuitionTab(tab, el) {
+    currentTuitionTab = tab;
+    document.querySelectorAll('#view-tuition .tab-btn').forEach(b => b.classList.remove('active'));
+    if (el) el.classList.add('active');
+    renderTuition();
 }
 
 function renderTuition() {
-    let expected = 0, collected = 0; db.tuitions.forEach(t => collected += t.amount);
+    let expected = 0, collected = 0; 
+    db.tuitions.forEach(t => collected += t.amount);
     
+    // Tổng dự thu tính trên toàn bộ buổi học sinh đã có mặt chưa đóng tiền (kể cả hs đã nghỉ nếu còn nợ)
     db.students.forEach(stu => {
-        if(stu.status === 'inactive') return;
-        let cls = db.classes.find(c => c.id == stu.classId);
-        if(cls) {
-            let attended = db.attendance.filter(a => a.studentId == stu.id && a.status === 'có mặt').length;
-            let paidSessions = 0; db.tuitions.filter(t => t.studentId == stu.id).forEach(t => paidSessions += (t.toSession - t.fromSession + 1));
-            let unpaid = attended - paidSessions;
-            if (unpaid > 0) { let fee = parseInt(stu.customFee) || parseInt(cls.fee) || 0; expected += unpaid * fee; }
+        let info = getStudentTuitionInfo(stu);
+        if (info && info.totalUnpaidAmount > 0) {
+            expected += info.totalUnpaidAmount;
         }
     });
 
-    let dues = calculateTuitionDue(); const list = document.getElementById('tuition-due-list'); list.innerHTML = '';
+    let filterClassId = document.getElementById('tuition-filter-class') ? document.getElementById('tuition-filter-class').value : 'ALL';
+    let filterCycleVal = document.getElementById('tuition-filter-cycle') ? document.getElementById('tuition-filter-cycle').value : 'ALL';
+
+    let allStudentsInfo = [];
+    db.students.forEach(stu => {
+        let info = getStudentTuitionInfo(stu);
+        if (info) allStudentsInfo.push(info);
+    });
+
+    // Lọc theo lớp
+    if (filterClassId && filterClassId !== 'ALL') {
+        allStudentsInfo = allStudentsInfo.filter(item => item.cls.id == filterClassId);
+    }
+
+    // Lọc theo tab
+    let displayList = [];
+    if (currentTuitionTab === 'due') {
+        // Tab "Đến hạn / Nợ": Học sinh có kỳ chưa nộp hoặc nợ >= 1 chu kỳ hoặc nợ quá hạn
+        displayList = allStudentsInfo.filter(item => {
+            if (item.isInactive && item.unpaid <= 0) return false;
+            return item.unpaidCycles.length > 0 || item.unpaid >= item.cycleSize || (item.unpaid > 0 && item.hasOverdue);
+        });
+        document.getElementById('tuition-list-title').innerText = "Danh sách đến hạn / nợ học phí";
+    } else if (currentTuitionTab === 'multidue') {
+        // Tab "Nợ dồn nhiều kỳ": Nợ từ 2 kỳ trở lên hoặc nợ kỳ 1 mà đã học sang kỳ 2/3
+        displayList = allStudentsInfo.filter(item => item.isMultiDebt || (item.hasOverdue && item.unpaid > 0));
+        document.getElementById('tuition-list-title').innerText = "🔴 Học sinh nợ dồn nhiều kỳ";
+    } else {
+        // Tab "Tất cả học sinh": Hiển thị toàn bộ học sinh để theo dõi tiến độ từng kỳ
+        displayList = allStudentsInfo.filter(item => !item.isInactive || item.unpaid > 0);
+        document.getElementById('tuition-list-title').innerText = "Toàn bộ học sinh & Tiến độ kỳ";
+    }
+
+    // Lọc theo kỳ nếu được chọn: không làm mất học sinh còn nợ kỳ trước
+    if (filterCycleVal && filterCycleVal !== 'ALL') {
+        let cycleNum = parseInt(filterCycleVal);
+        displayList = displayList.filter(item => {
+            let targetCycle = item.cycles.find(c => c.cycleNumber === cycleNum);
+            if (targetCycle) {
+                if (currentTuitionTab === 'due') {
+                    return !targetCycle.isPaid || item.unpaidCycles.some(c => c.cycleNumber <= cycleNum);
+                }
+                return true;
+            }
+            // Nếu học sinh còn nợ kỳ trước đó chưa nộp, vẫn giữ trong danh sách để giáo viên không bị bỏ sót
+            return item.unpaidCycles.some(c => c.cycleNumber <= cycleNum);
+        });
+    }
+
+    const list = document.getElementById('tuition-due-list'); 
+    list.innerHTML = '';
     
-    if(dues.length === 0) { list.innerHTML = '<div class="text-center text-muted" style="padding:40px 20px;">Tất cả học sinh đã đóng đủ học phí!</div>'; }
-    dues.forEach(d => {
+    let countBadge = document.getElementById('tuition-list-count');
+    if (countBadge) {
+        countBadge.innerText = `${displayList.length} học sinh`;
+        if (currentTuitionTab === 'multidue') {
+            countBadge.className = 'badge-multidue';
+        } else {
+            countBadge.className = displayList.length > 0 ? 'badge-overdue' : 'badge-paid';
+        }
+    }
+
+    if (displayList.length === 0) {
+        list.innerHTML = `
+            <div style="background:white; border-radius:14px; padding:35px 20px; text-align:center; border:1px dashed #cbd5e1;">
+                <i class="fas fa-check-circle text-green" style="font-size:2.5rem; margin-bottom:10px;"></i>
+                <p style="font-weight:700; color:var(--text-main); margin-bottom:4px;">Không có học sinh nào trong danh mục này!</p>
+                <small class="text-muted">Mọi học sinh đều đang theo đúng tiến độ thanh toán.</small>
+            </div>`;
+    }
+
+    displayList.forEach(d => {
+        let borderClass = 'info-border';
+        let debtBadgeHtml = '';
+
+        if (d.isMultiDebt) {
+            borderClass = 'danger-border';
+            debtBadgeHtml = `<span class="badge-multidue"><i class="fas fa-exclamation-triangle"></i> Nợ ${d.unpaidCycles.length} kỳ dồn lại</span>`;
+        } else if (d.hasOverdue) {
+            borderClass = 'danger-border';
+            debtBadgeHtml = `<span class="badge-overdue"><i class="fas fa-clock"></i> Nợ quá hạn kỳ trước</span>`;
+        } else if (d.unpaid >= d.cycleSize) {
+            borderClass = 'warning-border';
+            debtBadgeHtml = `<span class="badge-overdue"><i class="fas fa-bell"></i> Đến kỳ thu tiền</span>`;
+        } else if (d.unpaid > 0) {
+            debtBadgeHtml = `<span class="badge-inprogress">Đang học (${d.unpaid}/${d.cycleSize} buổi)</span>`;
+        } else {
+            debtBadgeHtml = `<span class="badge-paid"><i class="fas fa-check"></i> Đã đóng đủ</span>`;
+        }
+
+        if (d.isInactive) {
+            debtBadgeHtml += ` <span style="background:#f1f5f9; color:#64748b; padding:2px 6px; border-radius:4px; font-size:0.7rem; font-weight:700;">Đã nghỉ</span>`;
+        }
+
+        // Tạo danh sách tóm tắt từng Kỳ
+        let cyclesSummaryHtml = '';
+        d.cycles.forEach(c => {
+            let statusText = '';
+            let rowClass = '';
+            if (c.isPaid) {
+                statusText = `<span class="cycle-pill paid"><i class="fas fa-check"></i> Đã nộp</span>`;
+            } else if (c.isOverdue) {
+                statusText = `<span class="cycle-pill due"><i class="fas fa-exclamation-circle"></i> Nợ kỳ trước (${c.cycleSize}b)</span>`;
+                rowClass = 'highlight-danger';
+            } else if (c.isDue) {
+                statusText = `<span class="cycle-pill due"><i class="fas fa-clock"></i> Đến hạn (${c.cycleSize}b)</span>`;
+                rowClass = 'highlight-danger';
+            } else if (c.isCurrent) {
+                statusText = `<span class="cycle-pill current">Đang học (${c.attendedInCycle || 0}/${c.cycleSize}b)</span>`;
+            } else {
+                statusText = `<span class="text-muted" style="font-size:0.75rem;">Chưa đến</span>`;
+            }
+
+            cyclesSummaryHtml += `
+                <div class="cycle-row-item ${rowClass}">
+                    <span><b>Kỳ ${c.cycleNumber}</b> (Buổi ${c.fromSession} - ${c.toSession}):</span>
+                    <div>${statusText} <span style="font-weight:700; color:var(--text-main); margin-left:4px;">${c.amount.toLocaleString()}đ</span></div>
+                </div>`;
+        });
+
+        // SĐT & Quick Call
+        let phoneDisplay = d.student.phone ? `
+            <a href="tel:${d.student.phone}" style="color:#0068ff; text-decoration:none; font-weight:600; font-size:0.8rem;">
+                <i class="fas fa-phone-alt"></i> ${d.student.phone}
+            </a>` : `<span class="text-muted" style="font-size:0.8rem;">Chưa có SĐT</span>`;
+
         list.innerHTML += `
-            <div class="tuition-card">
-                <div>
-                    <h4 style="font-size:1.05rem; margin-bottom:4px; color:var(--text-main); font-weight:800;">${d.student.name}</h4>
-                    <p class="text-sm text-muted">${d.cls.name} • Đạt mốc ${d.unpaidCount}/${d.cls.cycle} buổi</p>
-                </div>
-                <div style="text-align:right;">
-                    <h3 class="text-orange" style="margin-bottom:8px;">${d.amount.toLocaleString()}đ</h3>
-                    <div style="display:flex; justify-content:flex-end; gap:8px;">
-                        <button class="btn-sm" style="background:#0068ff; color:white; border:none;" onclick="sendZaloBill('${d.student.name}', '${d.cls.name}', ${d.cycle}, ${d.amount}, '${d.student.phone || ''}')" title="Copy tin nhắn & Mở Zalo"><i class="fas fa-comment-dots"></i> Zalo</button>
-                        <button class="btn-sm" style="background:var(--primary); color:white; border:none;" onclick="openPayModal(${d.student.id}, ${d.amount}, ${d.from}, ${d.to})">Thu tiền</button>
+            <div class="tuition-card-item ${borderClass}">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px;">
+                    <div>
+                        <h4 style="font-size:1.05rem; margin:0 0 2px 0; color:var(--text-main); font-weight:800;">${d.student.name}</h4>
+                        <div style="font-size:0.82rem; color:var(--text-muted); margin-bottom:4px;">
+                            ${d.cls.name} • ${phoneDisplay}
+                        </div>
                     </div>
+                    <div style="text-align:right;">
+                        <h3 class="text-orange" style="margin:0 0 4px 0; font-size:1.15rem;">
+                            ${d.totalUnpaidAmount > 0 ? d.totalUnpaidAmount.toLocaleString() + 'đ' : '0đ'}
+                        </h3>
+                        <div style="font-size:0.75rem; color:var(--text-muted);">
+                            Nợ: <b>${d.unpaid > 0 ? d.unpaid : 0}</b>/${d.cycleSize}b
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-bottom:8px;">
+                    ${debtBadgeHtml}
+                </div>
+
+                <div style="margin-bottom:12px;">
+                    ${cyclesSummaryHtml}
+                </div>
+
+                <div style="display:flex; gap:8px; justify-content:flex-end; border-top:1px solid #f1f5f9; padding-top:10px;">
+                    <button class="btn-sm btn-zalo" onclick="openZaloModal(${d.student.id})" title="Nhắn tin thông báo học phí kèm Mã QR qua Zalo">
+                        <i class="fas fa-comment-dots"></i> Gửi Zalo & QR
+                    </button>
+                    <button class="btn-sm btn-primary" onclick="openPayModal(${d.student.id})" title="Thu tiền học phí">
+                        <i class="fas fa-hand-holding-usd"></i> Thu tiền
+                    </button>
                 </div>
             </div>`;
     });
-    document.getElementById('ts-expected').innerText = expected.toLocaleString() + 'đ'; document.getElementById('ts-collected').innerText = collected.toLocaleString() + 'đ';
 
+    document.getElementById('ts-expected').innerText = expected.toLocaleString() + 'đ'; 
+    document.getElementById('ts-collected').innerText = collected.toLocaleString() + 'đ';
+
+    // Cập nhật lịch sử 30 giao dịch gần nhất
     const histList = document.getElementById('tuition-history-list');
     if (histList) {
         histList.innerHTML = '';
@@ -425,9 +1053,9 @@ function renderTuition() {
                 histList.innerHTML += `
                     <div class="list-item">
                         <div class="list-item-info">
-                            <strong style="color:var(--success); font-size:1.1rem;">+ ${t.amount.toLocaleString()}đ</strong>
+                            <strong style="color:var(--success); font-size:1.05rem;">+ ${t.amount.toLocaleString()}đ</strong>
                             <small style="color:var(--text-main); font-weight:700;">${stu ? stu.name : 'HS đã xóa'} (${cls ? cls.name : 'Lớp xóa'})</small>
-                            <small class="text-muted">${parseDateVi(t.date)} • Đóng cho buổi ${t.fromSession} - ${t.toSession}</small>
+                            <small class="text-muted">${parseDateVi(t.date)} • Đóng cho buổi ${t.fromSession} - ${t.toSession} ${t.note ? `• ${t.note}` : ''}</small>
                         </div>
                         <button class="btn-outline-action text-red" title="Xóa giao dịch này" onclick="deleteTuition(${t.id})"><i class="fas fa-trash"></i></button>
                     </div>`;
@@ -438,60 +1066,409 @@ function renderTuition() {
 
 function deleteTuition(id) {
     if(confirm("Hủy bỏ giao dịch thu tiền này? (Tiền sẽ bị trừ khỏi tổng Đã thu)")) {
-        db.tuitions = db.tuitions.filter(t => t.id != id); saveData(); renderTuition(); showToast("Đã hủy giao dịch!");
+        db.tuitions = db.tuitions.filter(t => t.id != id); 
+        saveData(); 
+        renderTuition(); 
+        showToast("Đã hủy giao dịch!");
     }
 }
 
-let currentPayData = null;
-function openPayModal(stuId, amount, from, to) {
-    let stu = db.students.find(s => s.id == stuId); let cls = db.classes.find(c => c.id == stu.classId);
-    document.getElementById('pay-stu-name').innerText = stu.name; document.getElementById('pay-class-info').innerText = cls.name; document.getElementById('pay-sessions').innerText = (to - from + 1); document.getElementById('pay-fee-per').innerText = (parseInt(stu.customFee) || parseInt(cls.fee) || 0).toLocaleString() + 'đ'; document.getElementById('pay-total-amount').innerText = amount.toLocaleString() + 'đ';
-    currentPayData = { stuId, classId: cls.id, amount, from, to }; openModal('modal-pay-tuition');
+// ================= MODAL THU TIỀN HỌC PHÍ ĐA KỲ =================
+let currentPayStudentInfo = null;
+let currentSelectedCycles = [];
+
+function openPayModal(stuId, targetCycleNum) {
+    let stu = db.students.find(s => s.id == stuId);
+    if (!stu) return;
+    let info = getStudentTuitionInfo(stu);
+    if (!info) return;
+
+    currentPayStudentInfo = info;
+    document.getElementById('pay-stu-id').value = stu.id;
+    document.getElementById('pay-stu-name').innerText = stu.name;
+    document.getElementById('pay-class-info').innerText = `${info.cls.name} (Đã học ${info.attended} buổi • Đã đóng ${info.paidSessions} buổi)`;
+    document.getElementById('pay-fee-per').innerText = info.fee.toLocaleString() + 'đ';
+    document.getElementById('pay-note').value = '';
+
+    const container = document.getElementById('pay-cycles-list');
+    container.innerHTML = '';
+
+    // Tìm các kỳ chưa thanh toán
+    let unpaidList = info.cycles.filter(c => !c.isPaid);
+    if (unpaidList.length === 0) {
+        // Nếu đã thanh toán hết, tạo kỳ tiếp theo để thu trước
+        let nextCycleNum = info.totalCycles + 1;
+        let fromS = (nextCycleNum - 1) * info.cycleSize + 1;
+        let toS = nextCycleNum * info.cycleSize;
+        unpaidList.push({
+            cycleNumber: nextCycleNum,
+            fromSession: fromS,
+            toSession: toS,
+            cycleSize: info.cycleSize,
+            attendedSessions: 0,
+            amount: info.cycleSize * info.fee,
+            isAdvance: true
+        });
+    }
+
+    currentSelectedCycles = [];
+
+    unpaidList.forEach((c, idx) => {
+        // Mặc định chọn kỳ được chỉ định, hoặc chọn các kỳ đến hạn / kỳ đầu tiên chưa nộp
+        let shouldCheck = false;
+        if (targetCycleNum) {
+            shouldCheck = (c.cycleNumber === targetCycleNum);
+        } else {
+            // Chọn kỳ chưa nộp đầu tiên, hoặc tất cả các kỳ quá hạn/đến hạn
+            shouldCheck = (idx === 0) || c.isOverdue || c.isDue;
+        }
+
+        if (shouldCheck) currentSelectedCycles.push(c.cycleNumber);
+
+        let labelTag = c.isOverdue ? `<span class="badge-overdue">Nợ quá hạn</span>` : (c.isDue ? `<span class="badge-overdue">Đến hạn</span>` : (c.isAdvance ? `<span class="badge-inprogress">Thu trước</span>` : `<span class="badge-inprogress">Kỳ hiện tại</span>`));
+
+        container.innerHTML += `
+            <label style="display:flex; justify-content:space-between; align-items:center; background:#f8fafc; padding:10px 12px; border-radius:10px; border:1px solid #e2e8f0; cursor:pointer;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <input type="checkbox" class="pay-cycle-checkbox" value="${c.cycleNumber}" ${shouldCheck ? 'checked' : ''} onchange="onPayCycleSelectionChange()" style="width:18px; height:18px; accent-color:var(--primary);">
+                    <span style="font-weight:700; font-size:0.88rem;">Kỳ ${c.cycleNumber} (Buổi ${c.fromSession} - ${c.toSession})</span>
+                    ${labelTag}
+                </div>
+                <strong style="color:var(--text-main); font-size:0.9rem;">${c.amount.toLocaleString()}đ</strong>
+            </label>`;
+    });
+
+    onPayCycleSelectionChange();
+    openModal('modal-pay-tuition');
+}
+
+function onPayCycleSelectionChange() {
+    if (!currentPayStudentInfo) return;
+    const checkboxes = document.querySelectorAll('.pay-cycle-checkbox:checked');
+    let totalSessions = 0;
+    let totalAmount = 0;
+    currentSelectedCycles = [];
+
+    checkboxes.forEach(cb => {
+        let cycleNum = parseInt(cb.value);
+        currentSelectedCycles.push(cycleNum);
+        let c = currentPayStudentInfo.cycles.find(item => item.cycleNumber === cycleNum);
+        if (c) {
+            totalSessions += c.cycleSize;
+            totalAmount += c.amount;
+        } else {
+            totalSessions += currentPayStudentInfo.cycleSize;
+            totalAmount += (currentPayStudentInfo.cycleSize * currentPayStudentInfo.fee);
+        }
+    });
+
+    document.getElementById('pay-sessions').innerText = `${totalSessions} buổi (${currentSelectedCycles.length} kỳ)`;
+    document.getElementById('pay-total-amount').innerText = totalAmount.toLocaleString() + 'đ';
 }
 
 function confirmPayment() {
-    db.tuitions.push({ id: Date.now(), studentId: currentPayData.stuId, classId: currentPayData.classId, date: getTodayStr(), amount: currentPayData.amount, fromSession: currentPayData.from, toSession: currentPayData.to });
-    saveData(); closeModal('modal-pay-tuition'); renderTuition(); showToast("✅ Đã ghi nhận thu tiền thành công!");
+    if (!currentPayStudentInfo || currentSelectedCycles.length === 0) {
+        return showToast("Vui lòng chọn ít nhất một kỳ để thu tiền!", "error");
+    }
+
+    let note = document.getElementById('pay-note').value.trim();
+    let stu = currentPayStudentInfo.student;
+    let cls = currentPayStudentInfo.cls;
+    let fee = currentPayStudentInfo.fee;
+    let cycleSize = currentPayStudentInfo.cycleSize;
+
+    // Ghi nhận thanh toán cho từng kỳ đã chọn theo thứ tự
+    currentSelectedCycles.sort((a,b) => a - b).forEach((cycleNum, i) => {
+        let fromS = (cycleNum - 1) * cycleSize + 1;
+        let toS = cycleNum * cycleSize;
+        let amount = cycleSize * fee;
+
+        db.tuitions.push({
+            id: Date.now() + i,
+            studentId: stu.id,
+            classId: cls.id,
+            date: getTodayStr(),
+            amount: amount,
+            fromSession: fromS,
+            toSession: toS,
+            note: note ? `${note} (Kỳ ${cycleNum})` : `Kỳ ${cycleNum}`
+        });
+    });
+
+    saveData();
+    closeModal('modal-pay-tuition');
+    renderTuition();
+    showToast(`✅ Đã ghi nhận thu học phí ${currentSelectedCycles.length} kỳ thành công!`);
 }
 
-// ================= XUẤT EXCEL CHUẨN XÁC =================
+// ================= ZALO & THÔNG BÁO HỌC PHÍ KÈM QR GIÁO VIÊN =================
+let currentZaloPayload = null;
+
+function openZaloModal(studentId, cycleNum) {
+    let stu = db.students.find(s => s.id == studentId);
+    if (!stu) return;
+    let info = getStudentTuitionInfo(stu);
+    if (!info) return;
+
+    let settings = getZaloSettings();
+    let cleanPhone = cleanPhoneNumber(stu.phone);
+    let targetInfoText = `${stu.name} • ${info.cls.name} • ${cleanPhone ? `SĐT: ${cleanPhone}` : '⚠️ Chưa có SĐT'}`;
+    document.getElementById('zalo-target-info').innerText = targetInfoText;
+
+    // Chuẩn bị chi tiết kỳ nợ
+    let cacKyNoText = "";
+    let totalSessionsDue = 0;
+    let totalAmountDue = 0;
+
+    if (cycleNum) {
+        let c = info.cycles.find(item => item.cycleNumber === cycleNum);
+        if (c) {
+            cacKyNoText = `Kỳ ${c.cycleNumber} (Buổi ${c.fromSession} - ${c.toSession}: ${c.cycleSize} buổi)`;
+            totalSessionsDue = c.cycleSize;
+            totalAmountDue = c.amount;
+        }
+    } else if (info.unpaidCycles.length > 0) {
+        let cycleDescriptions = info.unpaidCycles.map(c => `Kỳ ${c.cycleNumber} (Buổi ${c.fromSession}-${c.toSession})`);
+        cacKyNoText = `${cycleDescriptions.join(' + ')} (Tổng ${info.unpaidCycles.length * info.cycleSize} buổi)`;
+        totalSessionsDue = info.unpaidCycles.length * info.cycleSize;
+        totalAmountDue = info.unpaidCycles.reduce((sum, c) => sum + c.amount, 0);
+    } else {
+        cacKyNoText = `Kỳ hiện tại (${info.unpaid}/${info.cycleSize} buổi)`;
+        totalSessionsDue = info.unpaid > 0 ? info.unpaid : info.cycleSize;
+        totalAmountDue = totalSessionsDue * info.fee;
+    }
+
+    let noiDungCk = `HP ${removeVietnameseTones(stu.name)} ${removeVietnameseTones(info.cls.name)}`.trim();
+
+    // Thay thế biến trong mẫu tin nhắn (không dùng VietQR tự động mà dùng QR giáo viên đã tải lên)
+    let msg = settings.template;
+    msg = msg.replace(/\{ten_hs\}/g, stu.name);
+    msg = msg.replace(/\{ten_lop\}/g, info.cls.name);
+    msg = msg.replace(/\{cac_ky_no\}/g, cacKyNoText);
+    msg = msg.replace(/\{so_buoi_no\}/g, totalSessionsDue);
+    msg = msg.replace(/\{tong_tien\}/g, totalAmountDue.toLocaleString());
+    msg = msg.replace(/\{ngan_hang\}/g, settings.bank);
+    msg = msg.replace(/\{so_tai_khoan\}/g, settings.accountNumber || '(Chưa điền STK)');
+    msg = msg.replace(/\{chu_tai_khoan\}/g, settings.accountHolder || '(Chưa điền tên Thầy/Cô)');
+    msg = msg.replace(/\{noi_dung_ck\}/g, noiDungCk);
+
+    document.getElementById('zalo-send-text').value = msg;
+
+    updateTeacherQrPreviews();
+
+    currentZaloPayload = {
+        phone: cleanPhone,
+        studentName: stu.name
+    };
+
+    openModal('modal-zalo-send');
+}
+
+function copyZaloTextOnly() {
+    const text = document.getElementById('zalo-send-text').value;
+    navigator.clipboard.writeText(text).then(() => {
+        showToast("📋 Đã sao chép tin nhắn vào bộ nhớ tạm!");
+    }).catch(err => {
+        showToast("Lỗi sao chép!", "error");
+    });
+}
+
+function executeSendZalo() {
+    const text = document.getElementById('zalo-send-text').value;
+    let phone = currentZaloPayload ? currentZaloPayload.phone : '';
+
+    navigator.clipboard.writeText(text).then(() => {
+        if (phone && phone !== '') {
+            window.open(`https://zalo.me/${phone}`, '_blank');
+            showToast("✅ Đã copy và mở Zalo! Bạn chỉ cần Dán (Paste) để gửi.");
+        } else {
+            window.open(`https://chat.zalo.me`, '_blank');
+            showToast("✅ Đã copy tin nhắn! (Học sinh chưa có SĐT, đã mở Zalo Web để bạn tìm kiếm)");
+        }
+    }).catch(err => {
+        showToast("Lỗi sao chép! Vui lòng thử lại.", "error");
+    });
+}
+
+function openZaloWeb() {
+    window.open('https://chat.zalo.me', '_blank');
+}
+
+function openStudentZaloChat(studentId) {
+    let stu = db.students.find(s => s.id == studentId);
+    if (!stu) return;
+    let phone = cleanPhoneNumber(stu.phone);
+    if (!phone) {
+        if (confirm(`Học sinh ${stu.name} chưa có số điện thoại. Bạn có muốn cập nhật số điện thoại ngay không?`)) {
+            editStudent(stu.id);
+        }
+        return;
+    }
+    window.open(`https://zalo.me/${phone}`, '_blank');
+}
+
+// ================= XUẤT BẢNG NỢ HỌC PHÍ GỬI ZALO (KÈM QR GIÁO VIÊN) =================
+function openZaloBatchExportModal() {
+    let select = document.getElementById('zalo-batch-class-select');
+    if (select) {
+        let currentFilter = document.getElementById('tuition-filter-class') ? document.getElementById('tuition-filter-class').value : 'ALL';
+        let html = '<option value="ALL">-- Tất cả các nhóm lớp --</option>';
+        db.classes.forEach(c => {
+            html += `<option value="${c.id}">${c.name}</option>`;
+        });
+        select.innerHTML = html;
+        select.value = currentFilter || 'ALL';
+    }
+    generateZaloBatchText();
+    updateTeacherQrPreviews();
+    openModal('modal-zalo-batch-export');
+}
+
+function generateZaloBatchText() {
+    let select = document.getElementById('zalo-batch-class-select');
+    let classId = select ? select.value : 'ALL';
+    let settings = getZaloSettings();
+
+    let targetStudents = [];
+    db.students.forEach(stu => {
+        if (classId !== 'ALL' && stu.classId != classId) return;
+        let info = getStudentTuitionInfo(stu);
+        if (info && (info.unpaidCycles.length > 0 || info.unpaid >= info.cycleSize || (info.hasOverdue && info.unpaid > 0))) {
+            targetStudents.push(info);
+        }
+    });
+
+    let className = "CÁC LỚP";
+    if (classId !== 'ALL') {
+        let c = db.classes.find(x => x.id == classId);
+        if (c) className = c.name;
+    }
+
+    let lines = [];
+    lines.push(`[THÔNG BÁO HỌC PHÍ - ${className.toUpperCase()}]`);
+    lines.push(`Kính gửi Quý Phụ huynh, Thầy/Cô xin gửi thông báo danh sách học phí đến hạn:\n`);
+
+    let grandTotal = 0;
+    if (targetStudents.length === 0) {
+        lines.push(`(Hiện tại không có học sinh nào đến hạn hoặc nợ học phí trong danh mục này)`);
+    } else {
+        targetStudents.forEach((d, idx) => {
+            let amount = 0;
+            let detail = "";
+            if (d.unpaidCycles.length > 0) {
+                amount = d.unpaidCycles.reduce((sum, c) => sum + c.amount, 0);
+                detail = d.unpaidCycles.map(c => `Kỳ ${c.cycleNumber}`).join(' + ');
+            } else {
+                amount = d.unpaid * d.fee;
+                detail = `${d.unpaid} buổi`;
+            }
+            grandTotal += amount;
+            lines.push(`${idx + 1}. ${d.student.name} (${d.cls.name}): ${detail} - ${amount.toLocaleString()}đ`);
+        });
+
+        lines.push(`\n💰 Tổng số tiền: ${grandTotal.toLocaleString()}đ (${targetStudents.length} học sinh)`);
+    }
+
+    lines.push(`\n🏦 Thông tin tài khoản nhận học phí của Thầy/Cô:`);
+    lines.push(`- Tên chủ tài khoản: ${settings.accountHolder || '(Chưa điền tên Thầy/Cô)'}`);
+    lines.push(`- Số tài khoản: ${settings.accountNumber || '(Chưa điền STK)'} (${settings.bank || 'Ngân hàng'})`);
+    lines.push(`- Cú pháp chuyển khoản: HP [Tên học sinh] [Tên lớp]`);
+    lines.push(`\nThầy/Cô có gửi kèm ảnh mã QR chuyển khoản của Thầy/Cô bên dưới để Quý Phụ huynh quét thuận tiện.`);
+    lines.push(`Kính mong Quý Phụ huynh kiểm tra và hoàn tất học phí cho các em. Xin cảm ơn Quý Phụ huynh!`);
+
+    const txtArea = document.getElementById('zalo-batch-text');
+    if (txtArea) txtArea.value = lines.join('\n');
+}
+
+function copyZaloBatchText() {
+    const txtArea = document.getElementById('zalo-batch-text');
+    if (!txtArea) return;
+    navigator.clipboard.writeText(txtArea.value).then(() => {
+        showToast("📋 Đã sao chép danh sách học phí vào bộ nhớ tạm!");
+    }).catch(() => {
+        showToast("Lỗi sao chép!", "error");
+    });
+}
+
+function copyAndOpenZaloWeb() {
+    copyZaloBatchText();
+    window.open('https://chat.zalo.me', '_blank');
+    showToast("✅ Đã copy danh sách & mở Zalo Web! Bạn chỉ cần Dán (Ctrl+V) vào nhóm.");
+}
+
+// ================= XUẤT BÁO CÁO EXCEL CHUẨN XÁC ĐA KỲ =================
 function exportTuitionExcel() {
     let excelData = [];
-    excelData.push(["STT", "Họ và tên", "Số điện thoại", "Lớp", "Trạng thái", "Ngày vào học", "Số buổi nợ", "Tiền cần nộp (VNĐ)"]);
+    excelData.push([
+        "STT", 
+        "Họ và tên", 
+        "Số điện thoại", 
+        "Lớp", 
+        "Trạng thái", 
+        "Ngày vào học", 
+        "Chi tiết các kỳ nợ", 
+        "Số buổi nợ", 
+        "Đơn giá/buổi (VNĐ)", 
+        "Tổng tiền cần nộp (VNĐ)"
+    ]);
 
     let index = 1;
-    // Quét toàn bộ danh sách, kể cả bạn đã nghỉ
     db.students.forEach(stu => {
-        let cls = db.classes.find(c => c.id == stu.classId);
-        if(!cls) return;
-
-        let attended = db.attendance.filter(a => a.studentId == stu.id && a.status === 'có mặt').length;
-        let paidSessions = 0; 
-        db.tuitions.filter(t => t.studentId == stu.id).forEach(t => paidSessions += (t.toSession - t.fromSession + 1));
-        
-        let unpaid = attended - paidSessions;
-        let fee = parseInt(stu.customFee) || parseInt(cls.fee) || 0;
-        let amount = unpaid * fee;
+        let info = getStudentTuitionInfo(stu);
+        if (!info) return;
 
         let statusText = (stu.status === 'inactive') ? "Đã nghỉ ngang" : "Đang học";
         let startDateStr = stu.startDate ? parseDateVi(stu.startDate) : "--/--";
+
+        // Tóm tắt các kỳ nợ
+        let debtDetails = "";
+        if (info.unpaidCycles.length > 0) {
+            debtDetails = info.unpaidCycles.map(c => `Kỳ ${c.cycleNumber} (${c.cycleSize}b)`).join(', ');
+        } else if (info.unpaid > 0) {
+            debtDetails = `Kỳ hiện tại (${info.unpaid}/${info.cycleSize}b)`;
+        } else {
+            debtDetails = "Đã đóng đủ";
+        }
 
         excelData.push([
             index++, 
             stu.name, 
             stu.phone || "", 
-            cls.name, 
+            info.cls.name, 
             statusText,
             startDateStr,
-            unpaid > 0 ? unpaid : 0, 
-            amount > 0 ? amount : 0
+            debtDetails,
+            info.unpaid > 0 ? info.unpaid : 0, 
+            info.fee,
+            info.totalUnpaidAmount > 0 ? info.totalUnpaidAmount : 0
         ]);
     });
 
+    // Thêm thông tin tài khoản giáo viên vào cuối bảng Excel
+    let settings = getZaloSettings();
+    if (settings.accountNumber || settings.accountHolder) {
+        excelData.push([]);
+        excelData.push(["THÔNG TIN TÀI KHOẢN NHẬN HỌC PHÍ CỦA THẦY/CÔ:"]);
+        excelData.push(["Chủ tài khoản:", settings.accountHolder || ""]);
+        excelData.push(["Số tài khoản (STK):", settings.accountNumber || ""]);
+        excelData.push(["Ngân hàng:", settings.bank || ""]);
+        excelData.push(["Cú pháp chuyển khoản:", "HP [Tên học sinh] [Tên lớp]"]);
+    }
+
     let wb = XLSX.utils.book_new();
     let ws = XLSX.utils.aoa_to_sheet(excelData);
-    // Căn chỉnh độ rộng cột
-    ws['!cols'] = [{wch: 5}, {wch: 25}, {wch: 15}, {wch: 15}, {wch: 18}, {wch: 15}, {wch: 15}, {wch: 20}];
+    ws['!cols'] = [
+        {wch: 5}, 
+        {wch: 24}, 
+        {wch: 15}, 
+        {wch: 15}, 
+        {wch: 16}, 
+        {wch: 14}, 
+        {wch: 28}, 
+        {wch: 12}, 
+        {wch: 18}, 
+        {wch: 22}
+    ];
     XLSX.utils.book_append_sheet(wb, ws, "BaoCaoHocPhi");
     
     let thangHienTai = new Date().getMonth() + 1;
@@ -528,13 +1505,27 @@ function saveClass() { let id = document.getElementById('class-id').value; let n
 function editClass(id) { let c = db.classes.find(x => x.id == id); if(!c) return; document.getElementById('class-id').value = c.id; document.getElementById('cl-name').value = c.name; document.getElementById('cl-fee').value = c.fee; document.getElementById('cl-cycle').value = c.cycle; document.getElementById('cl-start').value = c.startDate; document.getElementById('tkb-container').innerHTML = ''; c.tkb.forEach(t => addTkbRow(t.dayOfWeek, t.start, t.end)); openModal('modal-add-class'); }
 
 function populateClassSelects() {
-    let html = '<option value="">-- Tất cả nhóm --</option>'; let htmlForm = ''; let htmlHol = '<option value="ALL">Tất cả nhóm lớp</option>';
-    db.classes.forEach(c => { html += `<option value="${c.id}">${c.name}</option>`; htmlForm += `<option value="${c.id}">${c.name}</option>`; htmlHol += `<option value="${c.id}">${c.name}</option>`;});
+    let html = '<option value="">-- Tất cả nhóm --</option>'; 
+    let htmlForm = ''; 
+    let htmlHol = '<option value="ALL">Tất cả nhóm lớp</option>';
+    let htmlTuition = '<option value="ALL">-- Tất cả các nhóm --</option>';
+    db.classes.forEach(c => { 
+        html += `<option value="${c.id}">${c.name}</option>`; 
+        htmlForm += `<option value="${c.id}">${c.name}</option>`; 
+        htmlHol += `<option value="${c.id}">${c.name}</option>`;
+        htmlTuition += `<option value="${c.id}">${c.name}</option>`;
+    });
     const filters = document.getElementById('filter-class-stu'); if(filters) filters.innerHTML = html;
     const formClass = document.getElementById('stu-class'); if(formClass) formClass.innerHTML = htmlForm;
     const formImp = document.getElementById('import-class-select'); if(formImp) formImp.innerHTML = htmlForm;
     const formHol = document.getElementById('hol-class'); if(formHol) formHol.innerHTML = htmlHol;
     const formMakeup = document.getElementById('makeup-class'); if(formMakeup) formMakeup.innerHTML = htmlForm;
+    const formTuition = document.getElementById('tuition-filter-class'); 
+    if(formTuition) {
+        let currVal = formTuition.value || 'ALL';
+        formTuition.innerHTML = htmlTuition;
+        formTuition.value = currVal;
+    }
 }
 
 function openAddStudentForClass(cid) { 
@@ -558,12 +1549,15 @@ function renderStudents() {
         let toggleBtn = isInactive ? `<button class="btn-outline-action text-green" onclick="toggleStudentStatus(${s.id})" title="Đi học lại"><i class="fas fa-undo"></i></button>` : `<button class="btn-outline-action text-slate" onclick="toggleStudentStatus(${s.id})" title="Báo nghỉ ngang"><i class="fas fa-user-slash"></i></button>`;
         let nameStyle = isInactive ? "text-decoration: line-through; opacity: 0.6;" : "";
 
+        let zaloQuickBtn = `<button class="btn-outline-action" style="color:#0068ff;" onclick="openStudentZaloChat(${s.id})" title="Nhắn tin Zalo với Phụ huynh"><i class="fas fa-comment-dots"></i></button>`;
+
         list.innerHTML += `<div class="list-item">
             <div class="list-item-info">
                 <strong style="${nameStyle}">${s.name} ${statusBadge}</strong>
-                <small>${cls ? cls.name : 'Lớp đã xóa'} • ${s.phone || 'Không có SĐT'}</small>
+                <small>${cls ? cls.name : 'Lớp đã xóa'} • ${s.phone ? `<span style="color:#0068ff; font-weight:600;"><i class="fas fa-phone-alt"></i> ${s.phone}</span>` : 'Không có SĐT'}</small>
             </div>
             <div style="display:flex; gap:8px;">
+                ${zaloQuickBtn}
                 ${toggleBtn}
                 <button class="btn-outline-action text-orange" onclick="editStudent(${s.id})" title="Sửa học sinh"><i class="fas fa-pen"></i></button>
                 <button class="btn-outline-action text-red" onclick="deleteStudent(${s.id})" title="Xóa học sinh"><i class="fas fa-trash"></i></button>
@@ -719,9 +1713,34 @@ window.confirmPayment = confirmPayment;
 window.openAttendance = openAttendance;
 window.setAtt = setAtt;
 window.submitAttendance = submitAttendance;
+window.openAbsenceZaloModal = openAbsenceZaloModal;
+window.copyAbsenceZaloText = copyAbsenceZaloText;
+window.executeSendAbsenceZalo = executeSendAbsenceZalo;
 window.calculateTuitionDue = calculateTuitionDue;
-window.sendZaloBill = sendZaloBill;
+window.renderTuition = renderTuition;
+window.setTuitionTab = setTuitionTab;
 window.openPayModal = openPayModal;
+window.onPayCycleSelectionChange = onPayCycleSelectionChange;
+window.confirmPayment = confirmPayment;
+window.deleteTuition = deleteTuition;
+window.openZaloModal = openZaloModal;
+window.executeSendZalo = executeSendZalo;
+window.openZaloWeb = openZaloWeb;
+window.saveZaloSettings = saveZaloSettings;
+window.resetZaloTemplate = resetZaloTemplate;
+window.copyZaloTextOnly = copyZaloTextOnly;
+window.openStudentZaloChat = openStudentZaloChat;
+window.getZaloSettings = getZaloSettings;
+window.handleTeacherQrUpload = handleTeacherQrUpload;
+window.removeTeacherQr = removeTeacherQr;
+window.downloadTeacherQr = downloadTeacherQr;
+window.copyTeacherQrImage = copyTeacherQrImage;
+window.copyAccountNumber = copyAccountNumber;
+window.openZaloBatchExportModal = openZaloBatchExportModal;
+window.generateZaloBatchText = generateZaloBatchText;
+window.copyZaloBatchText = copyZaloBatchText;
+window.copyAndOpenZaloWeb = copyAndOpenZaloWeb;
+window.updateTeacherQrPreviews = updateTeacherQrPreviews;
 window.openAddStudentForClass = openAddStudentForClass;
 window.renderStatistics = renderStatistics;
 window.exportTuitionExcel = exportTuitionExcel;
@@ -737,7 +1756,11 @@ setTimeout(() => {
     // Logic kiểm tra và hiển thị
     let savedVersion = localStorage.getItem('current_app_version');
     if (savedVersion !== APP_VERSION) {
-        alert(THONG_BAO); // Hiển thị bảng thông báo bắt buộc người dùng phải bấm OK
+        try {
+            alert(THONG_BAO);
+        } catch (e) {
+            console.log(THONG_BAO);
+        }
         localStorage.setItem('current_app_version', APP_VERSION); // Lưu lại mốc để lần sau mở app không bị hiện lại
     }
 }, 2000); // Chờ 2 giây sau khi app load xong trang chủ mới bật thông báo

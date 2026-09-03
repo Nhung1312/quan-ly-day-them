@@ -108,7 +108,9 @@ input:focus, select:focus { border-color: var(--primary); background: white; box
 .list-item-info small { color: var(--text-muted); font-size: 0.85rem; font-weight: 600;}
 
 /* Attendance Specific */
-.att-student { padding: 15px 10px; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; background:white; border-radius: 12px; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.02);}
+.att-student { padding: 15px 10px; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; background:white; border-radius: 12px; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.02); transition: background-color 0.2s, border-color 0.2s;}
+.att-student.vắng { background: #fff5f5; border: 1px solid #fecaca; }
+.att-student.phép { background: #fffbeb; border: 1px solid #fde68a; }
 .att-name { font-weight: 700; font-size: 1rem; color: var(--text-main); padding-left: 5px;}
 .att-actions { display: flex; gap: 6px;}
 .att-btn { width: 44px; height: 44px; border-radius: 10px; font-size: 1.1rem; color: var(--text-muted); background: #f1f5f9;}
@@ -116,6 +118,28 @@ input:focus, select:focus { border-color: var(--primary); background: white; box
 .att-btn.active.vắng { background: var(--danger); color: white;}
 .att-btn.active.phép { background: var(--warning); color: white;}
 .att-alert { padding: 12px; background: var(--primary-light); color: var(--primary-dark); text-align: center; font-size: 0.85rem; font-weight: 600; border-radius: 12px; margin: 10px; border: 1px dashed #bfdbfe;}
+.btn-att-zalo-quick {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 8px;
+    font-size: 0.76rem;
+    font-weight: 700;
+    cursor: pointer;
+    border: 1px solid;
+    transition: all 0.15s ease-in-out;
+    margin-top: 3px;
+    width: fit-content;
+}
+.btn-att-zalo-quick:hover {
+    filter: brightness(0.95);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+}
+.btn-att-zalo-quick:active {
+    transform: scale(0.96);
+}
 
 /* Tuition */
 .tuition-summary { display: flex; gap: 12px; }
@@ -155,3 +179,37 @@ input:focus, select:focus { border-color: var(--primary); background: white; box
 .toast { background: white; color: var(--text-main); padding: 14px 20px; border-radius: 12px; box-shadow: var(--shadow-md); display: flex; gap: 12px; font-weight: 700; animation: slideDownToast 0.3s forwards; border-left: 4px solid var(--primary);}
 .toast.error { border-left-color: var(--danger); }
 @keyframes slideDownToast { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+/* Zalo & Multi-cycle Tuition Enhancements */
+.btn-zalo { background: #0068ff !important; color: white !important; font-weight: 700; border-radius: 10px; border: none; cursor: pointer; transition: 0.2s; display: inline-flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 2px 6px rgba(0, 104, 255, 0.25); }
+.btn-zalo:active { background: #0056d6 !important; transform: scale(0.97); }
+.btn-zalo-outline { background: white !important; color: #0068ff !important; border: 1.5px solid #0068ff !important; font-weight: 700; border-radius: 10px; }
+
+.badge-overdue { background: #fee2e2; color: #ef4444; padding: 3px 8px; border-radius: 6px; font-size: 0.72rem; font-weight: 800; display: inline-flex; align-items: center; gap: 4px; border: 1px solid #fca5a5; }
+.badge-multidue { background: #7f1d1d; color: #fef2f2; padding: 3px 8px; border-radius: 6px; font-size: 0.72rem; font-weight: 800; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+.badge-inprogress { background: #eff6ff; color: #2563eb; padding: 3px 8px; border-radius: 6px; font-size: 0.72rem; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; }
+.badge-paid { background: #d1fae5; color: #059669; padding: 3px 8px; border-radius: 6px; font-size: 0.72rem; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; }
+
+.cycle-pill { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 6px; font-size: 0.75rem; font-weight: 700; margin-right: 4px; margin-bottom: 4px; }
+.cycle-pill.due { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
+.cycle-pill.current { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+.cycle-pill.paid { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+
+.tuition-card-item { background: white; border-radius: 16px; padding: 16px; box-shadow: var(--shadow-sm); border: 1px solid #f1f5f9; margin-bottom: 12px; transition: 0.2s; }
+.tuition-card-item.danger-border { border-left: 5px solid var(--danger); }
+.tuition-card-item.warning-border { border-left: 5px solid var(--warning); }
+.tuition-card-item.info-border { border-left: 5px solid var(--primary); }
+
+.cycle-row-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; background: #f8fafc; border-radius: 8px; margin-top: 6px; font-size: 0.82rem; border: 1px solid #e2e8f0; }
+.cycle-row-item.highlight-danger { background: #fef2f2; border-color: #fecaca; }
+
+.zalo-preview-box { background: #f0fdf4; border: 1.5px dashed #86efac; border-radius: 12px; padding: 12px; font-size: 0.85rem; line-height: 1.6; white-space: pre-wrap; color: #14532d; font-family: inherit; width: 100%; box-sizing: border-box; resize: vertical; min-height: 120px; outline: none; }
+
+/* Teacher QR Card & Upload Area */
+.teacher-qr-box { background: #f8fafc; border-radius: 14px; padding: 14px; text-align: center; border: 1.5px solid #e2e8f0; margin-top: 12px; }
+.teacher-qr-img { max-width: 210px; max-height: 230px; object-fit: contain; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin: 0 auto; display: block; border: 2px solid white; background: white; }
+.teacher-qr-upload-box { border: 2px dashed #93c5fd; background: #eff6ff; border-radius: 12px; padding: 18px 12px; text-align: center; cursor: pointer; transition: 0.2s; }
+.teacher-qr-upload-box:hover { background: #dbeafe; border-color: #3b82f6; }
+.copy-btn-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 6px; background: #e2e8f0; color: #334155; font-size: 0.75rem; font-weight: 700; cursor: pointer; border: none; transition: 0.15s; }
+.copy-btn-chip:hover { background: #cbd5e1; color: #0f172a; }
+

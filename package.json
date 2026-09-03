@@ -1,0 +1,14 @@
+{
+  "name": "quan-ly-day-them",
+  "version": "1.0.0",
+  "description": "App Quản Lý Dạy Thêm",
+  "type": "module",
+  "scripts": {
+    "dev": "node server.js",
+    "build": "mkdir -p dist && cp -r index.html script.js style.css manifest.json sw.js icon-app.png qr-thu-phi.jpg dist/ 2>/dev/null || cp -r * dist/ 2>/dev/null",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}

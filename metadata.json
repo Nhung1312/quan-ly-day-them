@@ -1,0 +1,8 @@
+{
+  "name": "Quản Lý Dạy Thêm",
+  "description": "Hệ thống quản lý dạy thêm tự động, theo dõi lớp học, học sinh, điểm danh và học phí",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

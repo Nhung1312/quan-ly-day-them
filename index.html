@@ -3,7 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>APP QUẢN LÝ DẠY THÊM</title>
+    <title>Quản Lý Dạy Thêm</title>
+    <meta name="description" content="Hệ thống quản lý dạy thêm tự động, theo dõi lớp học, học sinh, điểm danh và học phí">
+    <meta property="og:title" content="Quản Lý Dạy Thêm">
+    <meta property="og:description" content="Hệ thống quản lý dạy thêm tự động, theo dõi lớp học, học sinh, điểm danh và học phí">
     <link rel="manifest" href="manifest.json">
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -19,6 +22,9 @@
         <p style="color: #7f8c8d; margin-bottom: 20px;">Vui lòng đăng nhập để đồng bộ dữ liệu</p>
         <button id="btn-login" style="padding: 12px 24px; font-size: 16px; font-weight: bold; background: #4285F4; color: white; border: none; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
             Đăng nhập bằng Google
+        </button>
+        <button id="btn-guest" style="margin-top: 12px; padding: 10px 20px; font-size: 14px; font-weight: 600; background: transparent; color: #4b5563; border: 1px solid #d1d5db; border-radius: 8px; cursor: pointer;">
+            Tiếp tục không đăng nhập (Lưu trữ cục bộ)
         </button>
     </div>
     
@@ -94,20 +100,60 @@
 
             <!-- ================= HỌC PHÍ ================= -->
             <section id="view-tuition" class="view">
-                <div class="top-bar"><div class="top-bar-title"><h2>💰 Học phí</h2></div></div>
-                
-                <div class="tuition-summary mb-20">
-                    <div class="ts-box"><p>Tổng dự thu</p><h3 class="text-orange" id="ts-expected">0đ</h3></div>
-                    <div class="ts-box"><p>Đã thu</p><h3 class="text-green" id="ts-collected">0đ</h3></div>
-                </div>
-                
-                <div class="action-buttons mb-15" style="display: flex; justify-content: flex-end;">
-                    <button class="btn-primary w-full" style="background:#10b981; padding: 12px; font-size: 0.95rem; box-shadow: 0 4px 10px rgba(16, 185, 129, 0.3);" onclick="exportTuitionExcel()">
-                        <i class="fas fa-file-excel"></i> Xuất danh sách Excel gửi Phụ huynh
+                <div class="top-bar">
+                    <div class="top-bar-title"><h2>💰 Học phí</h2></div>
+                    <button class="btn-sm btn-zalo" onclick="openModal('modal-zalo-settings')" title="Tải mã QR giáo viên & Cài đặt chuyển khoản">
+                        <i class="fas fa-qrcode"></i> Tải QR & Cài đặt
                     </button>
                 </div>
                 
-                <div class="section-title"><h3>Đến kỳ thu tiền</h3></div>
+                <div class="tuition-summary mb-15">
+                    <div class="ts-box"><p>Tổng nợ / Dự thu</p><h3 class="text-orange" id="ts-expected">0đ</h3></div>
+                    <div class="ts-box"><p>Thực tế đã thu</p><h3 class="text-green" id="ts-collected">0đ</h3></div>
+                </div>
+
+                <div class="action-buttons mb-15" style="display: flex; gap: 8px;">
+                    <button class="btn-primary w-full" style="background:#10b981; padding: 11px; font-size: 0.88rem; box-shadow: 0 4px 10px rgba(16, 185, 129, 0.25);" onclick="exportTuitionExcel()">
+                        <i class="fas fa-file-excel"></i> Xuất Excel báo cáo
+                    </button>
+                    <button class="btn-primary w-full btn-zalo" style="padding: 11px; font-size: 0.88rem;" onclick="openZaloBatchExportModal()">
+                        <i class="fas fa-list-alt"></i> Bảng nợ gửi Zalo
+                    </button>
+                    <button class="btn-outline w-full" style="padding: 11px; font-size: 0.88rem; font-weight: 700; color: #0068ff; border-color: #93c5fd;" onclick="openZaloWeb()">
+                        <i class="fas fa-external-link-alt"></i> Zalo Web
+                    </button>
+                </div>
+
+                <!-- BỘ LỌC HỌC PHÍ & KỲ THU TIỀN -->
+                <div style="background: white; border-radius: 14px; padding: 12px; border: 1px solid #e2e8f0; margin-bottom: 15px;">
+                    <div class="form-row mb-10" style="gap: 8px;">
+                        <div style="flex: 1;">
+                            <label style="font-size: 0.75rem; margin-bottom: 4px; color: var(--text-muted);">Lọc theo Nhóm lớp:</label>
+                            <select id="tuition-filter-class" onchange="renderTuition()" style="padding: 8px 10px; font-size: 0.85rem;"></select>
+                        </div>
+                        <div style="flex: 1;">
+                            <label style="font-size: 0.75rem; margin-bottom: 4px; color: var(--text-muted);">Lọc theo Kỳ học:</label>
+                            <select id="tuition-filter-cycle" onchange="renderTuition()" style="padding: 8px 10px; font-size: 0.85rem;">
+                                <option value="ALL">Tất cả các kỳ</option>
+                                <option value="1">Kỳ 1</option>
+                                <option value="2">Kỳ 2</option>
+                                <option value="3">Kỳ 3</option>
+                                <option value="4">Kỳ 4</option>
+                            </select>
+                        </div>
+                    </div>
+                    <!-- Tab trạng thái thu phí -->
+                    <div class="tab-container" style="padding: 2px;">
+                        <div class="tab-btn active" id="tab-btn-due" onclick="setTuitionTab('due', this)">⚠️ Đến hạn / Nợ</div>
+                        <div class="tab-btn" id="tab-btn-multidue" onclick="setTuitionTab('multidue', this)">🔴 Nợ dồn nhiều kỳ</div>
+                        <div class="tab-btn" id="tab-btn-all" onclick="setTuitionTab('all', this)">👥 Tất cả học sinh</div>
+                    </div>
+                </div>
+                
+                <div class="section-title">
+                    <h3 id="tuition-list-title">Danh sách cần thu học phí</h3>
+                    <span id="tuition-list-count" class="badge-overdue">0 học sinh</span>
+                </div>
                 <div id="tuition-due-list" class="list-container mb-20"></div>
 
                 <div class="section-title mt-20"><h3>Lịch sử đóng tiền (30GD gần nhất)</h3></div>
@@ -118,6 +164,7 @@
             <section id="view-more" class="view">
                 <div class="top-bar"><div class="top-bar-title"><h2>⚙️ Khác</h2></div></div>
                 <div class="dashboard-grid">
+                    <div class="menu-card" onclick="openModal('modal-zalo-settings')"><div class="menu-icon" style="background: #0068ff; color: white;"><i class="fas fa-comment-dots"></i></div><div class="menu-info"><h4>Kết nối Zalo & Bank</h4><p>Mẫu tin & VietQR</p></div></div>
                     <div class="menu-card" onclick="openModal('modal-guide')"><div class="menu-icon" style="background: #f59e0b; color: white;"><i class="fas fa-book-open"></i></div><div class="menu-info"><h4>Hướng dẫn</h4><p>Quy trình 5 bước</p></div></div>
                     <div class="menu-card" onclick="switchView('view-students')"><div class="menu-icon bg-blue"><i class="fas fa-users"></i></div><div class="menu-info"><h4>Quản lý học sinh</h4><p>Hồ sơ & Import</p></div></div>
                     <div class="menu-card" onclick="switchView('view-statistics')"><div class="menu-icon bg-green"><i class="fas fa-chart-bar"></i></div><div class="menu-info"><h4>Thống kê</h4><p>Báo cáo doanh thu</p></div></div>
@@ -185,11 +232,342 @@
 
     <div id="modal-attendance" class="modal"><div class="modal-content" style="height: 90vh;"><div class="modal-header"><div><h3 id="att-class-name">Điểm danh</h3><p class="text-sm text-muted" id="att-date-info"></p></div><div class="close" onclick="closeModal('modal-attendance')"><i class="fas fa-times"></i></div></div><div class="modal-body" style="padding: 0; background: #f8fafc;"><div class="att-alert"><i class="fas fa-info-circle"></i> Mặc định TẤT CẢ đang có mặt. Bấm để chuyển trạng thái.</div><div id="att-student-list" style="padding: 10px;"></div></div><div class="modal-footer"><button class="btn-primary w-full btn-large" style="font-size: 1.05rem;" onclick="submitAttendance()"><i class="fas fa-check-circle"></i> HOÀN THÀNH BUỔI HỌC</button></div></div></div>
     
+    <!-- MODAL BÁO HỌC SINH VẮNG HỌC QUA ZALO -->
+    <div id="modal-zalo-absence" class="modal" style="z-index: 220;">
+        <div class="modal-content" style="max-height: 94vh;">
+            <div class="modal-header">
+                <div>
+                    <h3 style="display: flex; align-items: center; gap: 8px; color: #ef4444;">
+                        <i class="fas fa-user-clock"></i> Báo học sinh nghỉ học qua Zalo
+                    </h3>
+                    <p class="text-sm text-muted" id="zalo-absence-target-info">Học sinh • Lớp • SĐT Phụ huynh</p>
+                </div>
+                <div class="close" onclick="closeModal('modal-zalo-absence')"><i class="fas fa-times"></i></div>
+            </div>
+            <div class="modal-body">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <label style="font-size: 0.85rem; font-weight: 700; margin-bottom: 0;">Nội dung tin nhắn gửi Phụ huynh:</label>
+                    <button type="button" class="btn-sm" style="background:#eff6ff; color:#0068ff; border: 1px solid #bfdbfe; padding: 4px 10px; font-size: 0.78rem;" onclick="copyAbsenceZaloText()">
+                        <i class="fas fa-copy"></i> Sao chép tin
+                    </button>
+                </div>
+                <textarea id="zalo-absence-text" class="zalo-preview-box" rows="7" style="line-height: 1.5; font-size: 0.85rem;"></textarea>
+                
+                <div style="background: #eff6ff; border: 1px solid #bfdbfe; margin-top: 10px; padding: 10px 12px; border-radius: 10px;">
+                    <div style="font-size: 0.82rem; color: #1e40af; line-height: 1.5;">
+                        💡 <strong>Thao tác 1 chạm:</strong> Bấm nút <strong>"COPY & MỞ ZALO PHỤ HUYNH"</strong>, hệ thống tự động copy tin nhắn và mở thẳng Zalo riêng của Phụ huynh. Bạn chỉ cần bấm <strong>Dán (Ctrl + V)</strong> để gửi.
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" style="flex-direction: column; gap: 8px;">
+                <button type="button" id="btn-send-absence-zalo" class="btn-primary w-full btn-large btn-zalo" onclick="executeSendAbsenceZalo()">
+                    <i class="fas fa-paper-plane"></i> 🚀 COPY & MỞ ZALO PHỤ HUYNH
+                </button>
+                <div style="display: flex; gap: 8px; width: 100%;">
+                    <button type="button" class="btn-outline w-full" style="font-size: 0.82rem; padding: 10px;" onclick="copyAbsenceZaloText()">
+                        <i class="fas fa-copy"></i> Sao chép tin nhắn
+                    </button>
+                    <button type="button" class="btn-outline w-full" style="font-size: 0.82rem; padding: 10px; color: #0068ff; border-color: #bfdbfe;" onclick="openZaloWeb()">
+                        <i class="fas fa-external-link-alt"></i> Mở Zalo Web
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
     <div id="modal-add-holiday" class="modal"><div class="modal-content"><div class="modal-header"><h3>Thông tin Lịch Nghỉ</h3><div class="close" onclick="closeModal('modal-add-holiday')"><i class="fas fa-times"></i></div></div><div class="modal-body"><input type="hidden" id="hol-id"><div class="input-group"><label>Tên / Lý do nghỉ *</label><input type="text" id="hol-name" placeholder="VD: Nghỉ lễ Quốc khánh"></div><div class="form-row"><div class="input-group"><label>Từ ngày *</label><input type="date" id="hol-start"></div><div class="input-group"><label>Đến ngày *</label><input type="date" id="hol-end"></div></div><div class="input-group"><label>Áp dụng cho</label><select id="hol-class"><option value="ALL">Tất cả các nhóm lớp</option></select></div></div><div class="modal-footer"><button class="btn-primary w-full" onclick="saveHoliday()">Lưu Lịch Nghỉ</button></div></div></div>
     
     <div id="modal-add-makeup" class="modal"><div class="modal-content"><div class="modal-header"><h3>Thêm Lịch Dạy Bù</h3><div class="close" onclick="closeModal('modal-add-makeup')"><i class="fas fa-times"></i></div></div><div class="modal-body"><div class="input-group"><label>Chọn nhóm lớp *</label><select id="makeup-class"></select></div><div class="form-row"><div class="input-group"><label>Ngày dạy bù *</label><input type="date" id="makeup-date"></div></div><div class="form-row"><div class="input-group"><label>Từ giờ *</label><input type="time" id="makeup-start" value="18:00"></div><div class="input-group"><label>Đến giờ *</label><input type="time" id="makeup-end" value="20:00"></div></div><div class="input-group mb-0"><label>Ghi chú</label><input type="text" id="makeup-note" placeholder="VD: Bù cho ngày lễ"></div></div><div class="modal-footer"><button class="btn-primary w-full" onclick="saveMakeup()">Lưu Dạy Bù</button></div></div></div>
 
-    <div id="modal-pay-tuition" class="modal"><div class="modal-content"><div class="modal-header"><h3>Thu học phí</h3><div class="close" onclick="closeModal('modal-pay-tuition')"><i class="fas fa-times"></i></div></div><div class="modal-body text-center"><i class="fas fa-money-check-alt text-green" style="font-size: 3rem; margin-bottom:15px;"></i><h3 id="pay-stu-name">Học sinh</h3><p class="text-muted" id="pay-class-info">Toán 8A</p><div class="mt-15 p-15" style="background:#f8fafc; border-radius:12px;"><p>Số buổi tính phí: <strong id="pay-sessions">10</strong></p><p>Mức phí: <strong id="pay-fee-per">80,000đ</strong>/buổi</p><h2 class="text-orange mt-10" id="pay-total-amount">800,000đ</h2></div><input type="hidden" id="pay-stu-id"></div><div class="modal-footer"><button class="btn-primary w-full btn-large" onclick="confirmPayment()">XÁC NHẬN ĐÃ THU TIỀN</button></div></div></div>
+    <!-- MODAL THU TIỀN HỌC PHÍ NÂNG CẤP (ĐA KỲ & NỢ DỒN) -->
+    <div id="modal-pay-tuition" class="modal">
+        <div class="modal-content" style="max-height: 92vh;">
+            <div class="modal-header">
+                <h3>Thu học phí</h3>
+                <div class="close" onclick="closeModal('modal-pay-tuition')"><i class="fas fa-times"></i></div>
+            </div>
+            <div class="modal-body">
+                <div style="text-align: center; margin-bottom: 12px;">
+                    <i class="fas fa-money-check-alt text-green" style="font-size: 2.4rem; margin-bottom: 8px;"></i>
+                    <h3 id="pay-stu-name" style="font-size: 1.15rem; color: var(--text-main);">Học sinh</h3>
+                    <p class="text-muted text-sm" id="pay-class-info">Toán 8A</p>
+                </div>
+
+                <div id="pay-cycles-container" style="margin-bottom: 15px;">
+                    <label style="font-size: 0.85rem; font-weight: 700; color: var(--text-main); margin-bottom: 6px; display: block;">Chọn kỳ muốn thanh toán:</label>
+                    <div id="pay-cycles-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
+                </div>
+
+                <div style="background:#f8fafc; border-radius:12px; padding: 12px; border: 1px solid #e2e8f0; margin-bottom: 12px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 6px;">
+                        <span>Số buổi thanh toán:</span>
+                        <strong id="pay-sessions" class="text-blue">10 buổi</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 6px;">
+                        <span>Đơn giá mỗi buổi:</span>
+                        <strong id="pay-fee-per">80,000đ</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px dashed #cbd5e1; padding-top: 8px; margin-top: 6px;">
+                        <span style="font-weight: 800; font-size: 0.95rem;">Tổng tiền thu:</span>
+                        <h2 class="text-orange" id="pay-total-amount" style="font-size: 1.35rem; margin: 0;">800,000đ</h2>
+                    </div>
+                </div>
+
+                <div class="input-group mb-0">
+                    <label style="font-size: 0.8rem;">Ghi chú thu tiền (tùy chọn):</label>
+                    <input type="text" id="pay-note" placeholder="VD: Phụ huynh chuyển khoản Vietcombank" style="padding: 8px 12px; font-size: 0.85rem;">
+                </div>
+                <input type="hidden" id="pay-stu-id">
+            </div>
+            <div class="modal-footer">
+                <button class="btn-outline w-full" onclick="closeModal('modal-pay-tuition')">Hủy</button>
+                <button class="btn-primary w-full" style="background: var(--success);" onclick="confirmPayment()">
+                    <i class="fas fa-check-circle"></i> XÁC NHẬN ĐÃ THU
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL CÀI ĐẶT ZALO & MÃ QR GIÁO VIÊN / NGÂN HÀNG -->
+    <div id="modal-zalo-settings" class="modal">
+        <div class="modal-content" style="max-height: 94vh;">
+            <div class="modal-header">
+                <div>
+                    <h3 style="display: flex; align-items: center; gap: 8px; color: #0068ff;">
+                        <i class="fas fa-qrcode"></i> Cài đặt QR & Tài khoản Giáo viên
+                    </h3>
+                    <p class="text-sm text-muted">Tải ảnh mã QR của Thầy/Cô, điền STK và nội dung Zalo</p>
+                </div>
+                <div class="close" onclick="closeModal('modal-zalo-settings')"><i class="fas fa-times"></i></div>
+            </div>
+            <div class="modal-body">
+                <!-- KHU VỰC TẢI ẢNH MÃ QR CỦA GIÁO VIÊN -->
+                <div class="input-group mb-15">
+                    <label style="font-weight: 700; color: var(--text-main); display: flex; align-items: center; justify-content: space-between;">
+                        <span><i class="fas fa-image text-blue"></i> Ảnh Mã QR Chuyển khoản của Thầy/Cô *</span>
+                        <small class="text-muted" style="font-weight: normal;">(Chụp từ App Ngân hàng/Ví)</small>
+                    </label>
+                    
+                    <div id="teacher-qr-settings-container">
+                        <div id="teacher-qr-upload-box" class="teacher-qr-upload-box" onclick="document.getElementById('teacher-qr-input').click()">
+                            <i class="fas fa-cloud-upload-alt" style="font-size: 2.2rem; color: #3b82f6; margin-bottom: 6px; display: block;"></i>
+                            <p style="margin: 0 0 4px 0; font-weight: 700; color: #1e40af; font-size: 0.92rem;">
+                                📸 Bấm vào đây để tải ảnh mã QR của Thầy/Cô lên
+                            </p>
+                            <span style="font-size: 0.78rem; color: #64748b;">Hỗ trợ file ảnh JPG, PNG, WEBP từ điện thoại/máy tính</span>
+                        </div>
+                        
+                        <div id="teacher-qr-preview-box" style="display: none; text-align: center; background: #f8fafc; padding: 12px; border-radius: 12px; border: 1px solid #cbd5e1;">
+                            <img id="teacher-qr-settings-img" class="teacher-qr-img" alt="Mã QR Thầy Cô">
+                            <div style="display: flex; justify-content: center; gap: 8px; margin-top: 10px;">
+                                <button type="button" class="btn-sm" style="background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe;" onclick="document.getElementById('teacher-qr-input').click()">
+                                    <i class="fas fa-camera"></i> Thay ảnh khác
+                                </button>
+                                <button type="button" class="btn-sm" style="background:#fef2f2; color:#b91c1c; border:1px solid #fecaca;" onclick="removeTeacherQr()">
+                                    <i class="fas fa-trash"></i> Xóa ảnh QR
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <input type="file" id="teacher-qr-input" accept="image/*" style="display: none;" onchange="handleTeacherQrUpload(event)">
+                </div>
+
+                <div class="input-group">
+                    <label>Ngân hàng nhận học phí *</label>
+                    <select id="bank-select" style="font-size: 0.9rem;">
+                        <option value="Vietcombank">Vietcombank (Ngoại thương Việt Nam)</option>
+                        <option value="MB Bank">MB Bank (Quân Đội)</option>
+                        <option value="Techcombank">Techcombank (Kỹ Thương)</option>
+                        <option value="BIDV">BIDV (Đầu tư & Phát triển)</option>
+                        <option value="Agribank">Agribank (Nông nghiệp)</option>
+                        <option value="VietinBank">VietinBank (Công Thương)</option>
+                        <option value="ACB">ACB (Á Châu)</option>
+                        <option value="VPBank">VPBank (Việt Nam Thịnh Vượng)</option>
+                        <option value="TPBank">TPBank (Tiên Phong)</option>
+                        <option value="Sacombank">Sacombank (Sài Gòn Thương Tín)</option>
+                        <option value="VIB">VIB (Quốc tế)</option>
+                        <option value="SHB">SHB (Sài Gòn - Hà Nội)</option>
+                        <option value="OCB">OCB (Phương Đông)</option>
+                        <option value="MSB">MSB (Hàng Hải)</option>
+                        <option value="SeABank">SeABank (Đông Nam Á)</option>
+                        <option value="HDBank">HDBank (Phát triển TP.HCM)</option>
+                        <option value="LPBank">LPBank (Lộc Phát)</option>
+                        <option value="Khác">Ngân hàng khác / Ví MoMo</option>
+                    </select>
+                </div>
+
+                <div class="form-row">
+                    <div class="input-group">
+                        <label>Số tài khoản ngân hàng (STK) *</label>
+                        <input type="text" id="bank-account" placeholder="VD: 1029384756" style="font-weight: 700; letter-spacing: 0.5px;">
+                    </div>
+                    <div class="input-group">
+                        <label>Tên Thầy/Cô (Chủ tài khoản) *</label>
+                        <input type="text" id="bank-holder" placeholder="VD: NGUYEN THI A" style="font-weight: 700;">
+                    </div>
+                </div>
+
+                <div class="input-group">
+                    <label>Số điện thoại Zalo của Thầy/Cô (tùy chọn)</label>
+                    <input type="tel" id="teacher-zalo-phone" placeholder="VD: 0912345678">
+                </div>
+
+                <div class="input-group mb-10">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <label style="margin-bottom: 0;">Mẫu tin nhắn Zalo gửi phụ huynh *</label>
+                        <button class="btn-sm" type="button" style="background:#f1f5f9; color: var(--primary); padding: 3px 8px; font-size: 0.75rem;" onclick="resetZaloTemplate()">
+                            <i class="fas fa-undo"></i> Mẫu mặc định
+                        </button>
+                    </div>
+                    <textarea id="zalo-template" rows="7" style="width: 100%; padding: 10px; font-size: 0.82rem; line-height: 1.5; border-radius: 10px; border: 1px solid #cbd5e1; background: #f8fafc; font-family: inherit;"></textarea>
+                    <p class="text-xs text-muted mt-5" style="font-size: 0.75rem; color: #64748b; line-height: 1.4;">
+                        Biến tự động: <code>{ten_hs}</code>, <code>{ten_lop}</code>, <code>{cac_ky_no}</code>, <code>{so_buoi_no}</code>, <code>{tong_tien}</code>, <code>{chu_tai_khoan}</code>, <code>{so_tai_khoan}</code>, <code>{ngan_hang}</code>, <code>{noi_dung_ck}</code>
+                    </p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-outline w-full" onclick="closeModal('modal-zalo-settings')">Hủy</button>
+                <button class="btn-primary w-full btn-zalo" onclick="saveZaloSettings()">
+                    <i class="fas fa-save"></i> LƯU CÀI ĐẶT
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL XEM TRƯỚC VÀ GỬI TIN NHẮN ZALO KÈM QR GIÁO VIÊN -->
+    <div id="modal-zalo-send" class="modal">
+        <div class="modal-content" style="max-height: 94vh;">
+            <div class="modal-header">
+                <div>
+                    <h3 style="display: flex; align-items: center; gap: 8px; color: #0068ff;">
+                        <i class="fas fa-comment-dots"></i> Gửi thông báo qua Zalo
+                    </h3>
+                    <p class="text-sm text-muted" id="zalo-target-info">Học sinh: ...</p>
+                </div>
+                <div class="close" onclick="closeModal('modal-zalo-send')"><i class="fas fa-times"></i></div>
+            </div>
+            <div class="modal-body">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <label style="font-size: 0.85rem; font-weight: 700; margin-bottom: 0;">Nội dung tin nhắn (Có thể sửa trực tiếp):</label>
+                    <button class="btn-sm" style="background:#eff6ff; color:#0068ff; border: 1px solid #bfdbfe; padding: 4px 10px; font-size: 0.78rem;" onclick="copyZaloTextOnly()">
+                        <i class="fas fa-copy"></i> Copy lời nhắn
+                    </button>
+                </div>
+                <textarea id="zalo-send-text" class="zalo-preview-box"></textarea>
+
+                <!-- THẺ MÃ QR VÀ THÔNG TIN TÀI KHOẢN GIÁO VIÊN -->
+                <div class="teacher-qr-box">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px;">
+                        <span style="font-size: 0.85rem; font-weight: 800; color: var(--text-main);">
+                            <i class="fas fa-qrcode text-blue"></i> Mã QR & Thông tin tài khoản Thầy/Cô
+                        </span>
+                        <button class="copy-btn-chip" onclick="openModal('modal-zalo-settings')" title="Cài đặt mã QR">
+                            <i class="fas fa-cog"></i> Cài đặt
+                        </button>
+                    </div>
+
+                    <div id="zalo-teacher-qr-active">
+                        <img id="zalo-teacher-qr-preview" class="teacher-qr-img" alt="Mã QR Giáo viên">
+                        <div style="display: flex; justify-content: center; gap: 8px; margin-top: 8px;">
+                            <button class="copy-btn-chip" onclick="downloadTeacherQr()"><i class="fas fa-download"></i> Tải ảnh QR</button>
+                            <button class="copy-btn-chip" onclick="copyTeacherQrImage()"><i class="fas fa-copy"></i> Copy ảnh QR</button>
+                        </div>
+                    </div>
+
+                    <div id="zalo-teacher-qr-empty" style="display: none; padding: 16px; background: #eff6ff; border-radius: 10px; border: 1.5px dashed #93c5fd; margin-bottom: 8px; cursor: pointer;" onclick="document.getElementById('teacher-qr-input').click()">
+                        <i class="fas fa-cloud-upload-alt text-blue" style="font-size: 1.8rem; margin-bottom: 4px; display: block;"></i>
+                        <div style="font-weight: 700; font-size: 0.85rem; color: #1e40af;">Chưa có ảnh mã QR của Thầy/Cô</div>
+                        <small style="color: #64748b;">Bấm vào đây để tải ảnh mã QR lên</small>
+                    </div>
+
+                    <div style="background: white; border-radius: 10px; padding: 10px 12px; margin-top: 8px; text-align: left; font-size: 0.82rem; border: 1px solid #e2e8f0;">
+                        <div style="margin-bottom: 3px;">Tên Thầy/Cô: <strong id="zalo-preview-holder" style="color: var(--text-main);">--</strong></div>
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span>STK: <strong id="zalo-preview-account" style="color: #0068ff; letter-spacing: 0.5px;">--</strong> (<span id="zalo-preview-bank">--</span>)</span>
+                            <button class="copy-btn-chip" onclick="copyAccountNumber()"><i class="fas fa-copy"></i> Copy STK</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" style="flex-direction: column; gap: 8px;">
+                <button class="btn-primary w-full btn-large btn-zalo" onclick="executeSendZalo()">
+                    <i class="fas fa-paper-plane"></i> 🚀 MỞ ZALO & GỬI TIN NHẮN
+                </button>
+                <div style="display: flex; gap: 8px; width: 100%;">
+                    <button class="btn-outline w-full" style="font-size: 0.82rem; padding: 10px;" onclick="copyZaloTextOnly()">
+                        <i class="fas fa-copy"></i> Copy tin nhắn
+                    </button>
+                    <button class="btn-outline w-full" style="font-size: 0.82rem; padding: 10px; color: #059669; border-color: #a7f3d0;" onclick="downloadTeacherQr()">
+                        <i class="fas fa-download"></i> Tải ảnh QR
+                    </button>
+                    <button class="btn-outline w-full" style="font-size: 0.82rem; padding: 10px; color: #0068ff; border-color: #bfdbfe;" onclick="openZaloWeb()">
+                        <i class="fas fa-external-link-alt"></i> Zalo Web
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL XUẤT BẢNG NỢ HỌC PHÍ GỬI NHÓM ZALO -->
+    <div id="modal-zalo-batch-export" class="modal">
+        <div class="modal-content" style="max-height: 94vh;">
+            <div class="modal-header">
+                <div>
+                    <h3 style="display: flex; align-items: center; gap: 8px; color: #0068ff;">
+                        <i class="fas fa-list-alt"></i> Bảng nợ học phí gửi Zalo
+                    </h3>
+                    <p class="text-sm text-muted">Xuất danh sách học phí kèm tên, STK & mã QR của Thầy/Cô</p>
+                </div>
+                <div class="close" onclick="closeModal('modal-zalo-batch-export')"><i class="fas fa-times"></i></div>
+            </div>
+            <div class="modal-body">
+                <div class="input-group mb-10">
+                    <label style="font-weight: 700;">Chọn Nhóm lớp cần xuất danh sách:</label>
+                    <select id="zalo-batch-class-select" onchange="generateZaloBatchText()" style="font-size: 0.9rem;"></select>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <label style="font-size: 0.85rem; font-weight: 700; margin-bottom: 0;">Nội dung danh sách (Gửi vào nhóm Zalo):</label>
+                    <button class="btn-sm" style="background:#eff6ff; color:#0068ff; border: 1px solid #bfdbfe; padding: 4px 10px; font-size: 0.78rem;" onclick="copyZaloBatchText()">
+                        <i class="fas fa-copy"></i> Copy danh sách
+                    </button>
+                </div>
+                <textarea id="zalo-batch-text" class="zalo-preview-box" rows="8"></textarea>
+
+                <!-- Thẻ QR giáo viên đính kèm -->
+                <div class="teacher-qr-box">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <span style="font-size: 0.85rem; font-weight: 800; color: var(--text-main);">
+                            <i class="fas fa-qrcode text-blue"></i> Mã QR của Thầy/Cô kèm theo thông báo
+                        </span>
+                        <div style="display: flex; gap: 6px;">
+                            <button class="copy-btn-chip" onclick="downloadTeacherQr()"><i class="fas fa-download"></i> Tải ảnh QR</button>
+                            <button class="copy-btn-chip" onclick="copyTeacherQrImage()"><i class="fas fa-copy"></i> Copy ảnh QR</button>
+                        </div>
+                    </div>
+                    <div id="zalo-batch-qr-container">
+                        <img id="zalo-batch-qr-preview" class="teacher-qr-img" alt="Mã QR Giáo viên">
+                    </div>
+                    <div id="zalo-batch-qr-empty" style="display: none; padding: 12px; background: #eff6ff; border-radius: 8px; border: 1px dashed #93c5fd; font-size: 0.8rem; color: #1e40af;">
+                        Chưa có ảnh mã QR. Bấm vào <a href="javascript:void(0)" onclick="openModal('modal-zalo-settings')" style="color:#0068ff; font-weight:700;">Tải QR & Cài đặt</a> để thêm mã QR.
+                    </div>
+                    <div style="background: white; border-radius: 8px; padding: 6px 10px; margin-top: 6px; font-size: 0.8rem; text-align: left; border: 1px solid #e2e8f0;">
+                        Chủ TK: <strong id="zalo-batch-holder">--</strong> • STK: <strong id="zalo-batch-account" style="color: #0068ff;">--</strong> (<span id="zalo-batch-bank">--</span>)
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" style="flex-direction: column; gap: 8px;">
+                <div style="display: flex; gap: 8px; width: 100%;">
+                    <button class="btn-primary w-full btn-large btn-zalo" onclick="copyAndOpenZaloWeb()">
+                        <i class="fas fa-copy"></i> 📋 COPY & MỞ ZALO WEB
+                    </button>
+                    <button class="btn-outline w-full btn-large" onclick="downloadTeacherQr()" style="color: #059669; border-color: #a7f3d0;">
+                        <i class="fas fa-download"></i> Tải ảnh QR
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Modal Sao lưu & Khôi phục Dữ liệu -->
     <div id="modal-settings" class="modal">
