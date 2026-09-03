@@ -142,11 +142,17 @@
                             </select>
                         </div>
                     </div>
-                    <!-- Tab trạng thái thu phí -->
-                    <div class="tab-container" style="padding: 2px;">
-                        <div class="tab-btn active" id="tab-btn-due" onclick="setTuitionTab('due', this)">⚠️ Đến hạn / Nợ</div>
-                        <div class="tab-btn" id="tab-btn-multidue" onclick="setTuitionTab('multidue', this)">🔴 Nợ dồn nhiều kỳ</div>
-                        <div class="tab-btn" id="tab-btn-all" onclick="setTuitionTab('all', this)">👥 Tất cả học sinh</div>
+                    <!-- CÔNG TẮC GẠT TRỰC QUAN: CHƯA ĐÓNG / ĐÃ ĐÓNG / TẤT CẢ -->
+                    <div class="tuition-toggle-wrap">
+                        <button type="button" class="tuition-toggle-btn active" id="tab-btn-unpaid" onclick="setTuitionTab('unpaid', this)">
+                            <i class="fas fa-clock"></i> Chưa đóng <span class="badge-count" id="count-tuition-unpaid">0</span>
+                        </button>
+                        <button type="button" class="tuition-toggle-btn" id="tab-btn-paid" onclick="setTuitionTab('paid', this)">
+                            <i class="fas fa-check-circle"></i> Đã đóng <span class="badge-count" id="count-tuition-paid">0</span>
+                        </button>
+                        <button type="button" class="tuition-toggle-btn" id="tab-btn-all" onclick="setTuitionTab('all', this)">
+                            <i class="fas fa-users"></i> Tất cả <span class="badge-count" id="count-tuition-all">0</span>
+                        </button>
                     </div>
                 </div>
                 

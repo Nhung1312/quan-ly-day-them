@@ -852,11 +852,16 @@ function calculateTuitionDue() {
     return dues;
 }
 
-let currentTuitionTab = 'due';
+let currentTuitionTab = 'unpaid';
 function setTuitionTab(tab, el) {
     currentTuitionTab = tab;
-    document.querySelectorAll('#view-tuition .tab-btn').forEach(b => b.classList.remove('active'));
-    if (el) el.classList.add('active');
+    document.querySelectorAll('.tuition-toggle-btn').forEach(b => b.classList.remove('active'));
+    if (el) {
+        el.classList.add('active');
+    } else {
+        let activeBtn = document.getElementById(`tab-btn-${tab}`);
+        if (activeBtn) activeBtn.classList.add('active');
+    }
     renderTuition();
 }
 
@@ -886,38 +891,68 @@ function renderTuition() {
         allStudentsInfo = allStudentsInfo.filter(item => item.cls.id == filterClassId);
     }
 
-    // Lọc theo tab
+    // Đếm số lượng học sinh cho các nút công tắc gạt
+    let countUnpaid = allStudentsInfo.filter(item => {
+        if (item.isInactive && item.unpaid <= 0) return false;
+        return item.unpaid > 0 || item.unpaidCycles.length > 0;
+    }).length;
+
+    let countPaid = allStudentsInfo.filter(item => {
+        if (item.isInactive && item.paidSessions <= 0) return false;
+        return item.unpaid <= 0 && (item.paidSessions > 0 || item.attended > 0);
+    }).length;
+
+    let countAll = allStudentsInfo.filter(item => !item.isInactive || item.unpaid > 0).length;
+
+    let elCountUnpaid = document.getElementById('count-tuition-unpaid');
+    let elCountPaid = document.getElementById('count-tuition-paid');
+    let elCountAll = document.getElementById('count-tuition-all');
+    if (elCountUnpaid) elCountUnpaid.innerText = countUnpaid;
+    if (elCountPaid) elCountPaid.innerText = countPaid;
+    if (elCountAll) elCountAll.innerText = countAll;
+
+    // Lọc theo tab công tắc
     let displayList = [];
-    if (currentTuitionTab === 'due') {
-        // Tab "Đến hạn / Nợ": Học sinh có kỳ chưa nộp hoặc nợ >= 1 chu kỳ hoặc nợ quá hạn
+    if (currentTuitionTab === 'unpaid' || currentTuitionTab === 'due') {
+        // Tab "Chưa đóng": Học sinh có kỳ chưa nộp hoặc còn nợ buổi
         displayList = allStudentsInfo.filter(item => {
             if (item.isInactive && item.unpaid <= 0) return false;
-            return item.unpaidCycles.length > 0 || item.unpaid >= item.cycleSize || (item.unpaid > 0 && item.hasOverdue);
+            return item.unpaid > 0 || item.unpaidCycles.length > 0;
         });
-        document.getElementById('tuition-list-title').innerText = "Danh sách đến hạn / nợ học phí";
-    } else if (currentTuitionTab === 'multidue') {
-        // Tab "Nợ dồn nhiều kỳ": Nợ từ 2 kỳ trở lên hoặc nợ kỳ 1 mà đã học sang kỳ 2/3
-        displayList = allStudentsInfo.filter(item => item.isMultiDebt || (item.hasOverdue && item.unpaid > 0));
-        document.getElementById('tuition-list-title').innerText = "🔴 Học sinh nợ dồn nhiều kỳ";
+        // Ưu tiên nợ nhiều kỳ lên trước, nợ quá hạn lên trước, sau đó nợ nhiều tiền lên trước
+        displayList.sort((a, b) => {
+            if (a.isMultiDebt && !b.isMultiDebt) return -1;
+            if (!a.isMultiDebt && b.isMultiDebt) return 1;
+            if (a.hasOverdue && !b.hasOverdue) return -1;
+            if (!a.hasOverdue && b.hasOverdue) return 1;
+            return b.totalUnpaidAmount - a.totalUnpaidAmount;
+        });
+        document.getElementById('tuition-list-title').innerText = "Danh sách học sinh chưa đóng học phí";
+    } else if (currentTuitionTab === 'paid') {
+        // Tab "Đã đóng": Học sinh đã đóng đủ tiền cho tất cả buổi đã học
+        displayList = allStudentsInfo.filter(item => {
+            if (item.isInactive && item.paidSessions <= 0) return false;
+            return item.unpaid <= 0 && (item.paidSessions > 0 || item.attended > 0);
+        });
+        document.getElementById('tuition-list-title').innerText = "Danh sách học sinh đã đóng đủ học phí";
     } else {
-        // Tab "Tất cả học sinh": Hiển thị toàn bộ học sinh để theo dõi tiến độ từng kỳ
+        // Tab "Tất cả học sinh": Hiển thị toàn bộ học sinh để theo dõi tổng thể
         displayList = allStudentsInfo.filter(item => !item.isInactive || item.unpaid > 0);
-        document.getElementById('tuition-list-title').innerText = "Toàn bộ học sinh & Tiến độ kỳ";
+        document.getElementById('tuition-list-title').innerText = "Toàn bộ danh sách học sinh";
     }
 
-    // Lọc theo kỳ nếu được chọn: không làm mất học sinh còn nợ kỳ trước
+    // Lọc theo kỳ nếu được chọn
     if (filterCycleVal && filterCycleVal !== 'ALL') {
         let cycleNum = parseInt(filterCycleVal);
         displayList = displayList.filter(item => {
             let targetCycle = item.cycles.find(c => c.cycleNumber === cycleNum);
-            if (targetCycle) {
-                if (currentTuitionTab === 'due') {
-                    return !targetCycle.isPaid || item.unpaidCycles.some(c => c.cycleNumber <= cycleNum);
-                }
-                return true;
+            if (!targetCycle) return false;
+            if (currentTuitionTab === 'unpaid' || currentTuitionTab === 'due') {
+                return !targetCycle.isPaid;
+            } else if (currentTuitionTab === 'paid') {
+                return targetCycle.isPaid;
             }
-            // Nếu học sinh còn nợ kỳ trước đó chưa nộp, vẫn giữ trong danh sách để giáo viên không bị bỏ sót
-            return item.unpaidCycles.some(c => c.cycleNumber <= cycleNum);
+            return true;
         });
     }
 
@@ -927,23 +962,28 @@ function renderTuition() {
     let countBadge = document.getElementById('tuition-list-count');
     if (countBadge) {
         countBadge.innerText = `${displayList.length} học sinh`;
-        if (currentTuitionTab === 'multidue') {
-            countBadge.className = 'badge-multidue';
+        if (currentTuitionTab === 'paid') {
+            countBadge.className = 'badge-paid';
         } else {
             countBadge.className = displayList.length > 0 ? 'badge-overdue' : 'badge-paid';
         }
     }
 
     if (displayList.length === 0) {
+        let emptyIcon = currentTuitionTab === 'paid' ? 'fa-clipboard-check text-green' : 'fa-check-circle text-green';
+        let emptyTitle = currentTuitionTab === 'paid' ? 'Chưa có học sinh nào hoàn thành học phí ở bộ lọc này.' : 'Tuyệt vời! Không có học sinh nào chưa đóng học phí.';
+        let emptyDesc = currentTuitionTab === 'paid' ? 'Khi bấm Thu tiền, học sinh sẽ tự động hiển thị ở mục Đã đóng.' : 'Tất cả học sinh đều đã nộp học phí đầy đủ theo tiến độ.';
+
         list.innerHTML = `
             <div style="background:white; border-radius:14px; padding:35px 20px; text-align:center; border:1px dashed #cbd5e1;">
-                <i class="fas fa-check-circle text-green" style="font-size:2.5rem; margin-bottom:10px;"></i>
-                <p style="font-weight:700; color:var(--text-main); margin-bottom:4px;">Không có học sinh nào trong danh mục này!</p>
-                <small class="text-muted">Mọi học sinh đều đang theo đúng tiến độ thanh toán.</small>
+                <i class="fas ${emptyIcon}" style="font-size:2.5rem; margin-bottom:10px;"></i>
+                <p style="font-weight:700; color:var(--text-main); margin-bottom:4px;">${emptyTitle}</p>
+                <small class="text-muted">${emptyDesc}</small>
             </div>`;
     }
 
     displayList.forEach(d => {
+        let isFullyPaid = (d.unpaid <= 0 && (d.paidSessions > 0 || d.attended > 0));
         let borderClass = 'info-border';
         let debtBadgeHtml = '';
 
@@ -957,9 +997,11 @@ function renderTuition() {
             borderClass = 'warning-border';
             debtBadgeHtml = `<span class="badge-overdue"><i class="fas fa-bell"></i> Đến kỳ thu tiền</span>`;
         } else if (d.unpaid > 0) {
-            debtBadgeHtml = `<span class="badge-inprogress">Đang học (${d.unpaid}/${d.cycleSize} buổi)</span>`;
+            borderClass = 'warning-border';
+            debtBadgeHtml = `<span class="badge-inprogress">Đang học (${d.unpaid}/${d.cycleSize} buổi chưa nộp)</span>`;
         } else {
-            debtBadgeHtml = `<span class="badge-paid"><i class="fas fa-check"></i> Đã đóng đủ</span>`;
+            borderClass = 'success-border';
+            debtBadgeHtml = `<span class="badge-paid"><i class="fas fa-check-circle"></i> Đã đóng đủ (${d.paidSessions} buổi)</span>`;
         }
 
         if (d.isInactive) {
@@ -998,6 +1040,26 @@ function renderTuition() {
                 <i class="fas fa-phone-alt"></i> ${d.student.phone}
             </a>` : `<span class="text-muted" style="font-size:0.8rem;">Chưa có SĐT</span>`;
 
+        // Nút hành động tương ứng với trạng thái
+        let actionButtonsHtml = '';
+        if (isFullyPaid) {
+            actionButtonsHtml = `
+                <button class="btn-sm btn-outline" style="color:#0068ff; border-color:#93c5fd;" onclick="openZaloModal(${d.student.id})" title="Nhắn tin Zalo / Gửi xác nhận đã đóng">
+                    <i class="fas fa-comment-dots"></i> Nhắn Zalo
+                </button>
+                <button class="btn-sm btn-outline" style="color:var(--primary); border-color:#cbd5e1; font-weight:700;" onclick="openPayModal(${d.student.id})" title="Thu tiền trước cho kỳ tới">
+                    <i class="fas fa-plus-circle"></i> Đóng kỳ tiếp
+                </button>`;
+        } else {
+            actionButtonsHtml = `
+                <button class="btn-sm btn-zalo" onclick="openZaloModal(${d.student.id})" title="Nhắn tin thông báo học phí kèm Mã QR qua Zalo">
+                    <i class="fas fa-comment-dots"></i> Gửi Zalo & QR
+                </button>
+                <button class="btn-sm btn-primary" onclick="openPayModal(${d.student.id})" title="Thu tiền học phí">
+                    <i class="fas fa-hand-holding-usd"></i> Thu tiền
+                </button>`;
+        }
+
         list.innerHTML += `
             <div class="tuition-card-item ${borderClass}">
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px;">
@@ -1008,11 +1070,11 @@ function renderTuition() {
                         </div>
                     </div>
                     <div style="text-align:right;">
-                        <h3 class="text-orange" style="margin:0 0 4px 0; font-size:1.15rem;">
-                            ${d.totalUnpaidAmount > 0 ? d.totalUnpaidAmount.toLocaleString() + 'đ' : '0đ'}
+                        <h3 class="${d.totalUnpaidAmount > 0 ? 'text-orange' : 'text-green'}" style="margin:0 0 4px 0; font-size:1.15rem;">
+                            ${d.totalUnpaidAmount > 0 ? d.totalUnpaidAmount.toLocaleString() + 'đ' : '0đ (Đã đủ)'}
                         </h3>
                         <div style="font-size:0.75rem; color:var(--text-muted);">
-                            Nợ: <b>${d.unpaid > 0 ? d.unpaid : 0}</b>/${d.cycleSize}b
+                            ${d.totalUnpaidAmount > 0 ? `Nợ: <b>${d.unpaid}</b>/${d.cycleSize}b` : `Đã đóng: <b>${d.paidSessions}</b>b`}
                         </div>
                     </div>
                 </div>
@@ -1026,12 +1088,7 @@ function renderTuition() {
                 </div>
 
                 <div style="display:flex; gap:8px; justify-content:flex-end; border-top:1px solid #f1f5f9; padding-top:10px;">
-                    <button class="btn-sm btn-zalo" onclick="openZaloModal(${d.student.id})" title="Nhắn tin thông báo học phí kèm Mã QR qua Zalo">
-                        <i class="fas fa-comment-dots"></i> Gửi Zalo & QR
-                    </button>
-                    <button class="btn-sm btn-primary" onclick="openPayModal(${d.student.id})" title="Thu tiền học phí">
-                        <i class="fas fa-hand-holding-usd"></i> Thu tiền
-                    </button>
+                    ${actionButtonsHtml}
                 </div>
             </div>`;
     });
@@ -1240,17 +1297,25 @@ function openZaloModal(studentId, cycleNum) {
 
     let noiDungCk = `HP ${removeVietnameseTones(stu.name)} ${removeVietnameseTones(info.cls.name)}`.trim();
 
-    // Thay thế biến trong mẫu tin nhắn (không dùng VietQR tự động mà dùng QR giáo viên đã tải lên)
-    let msg = settings.template;
-    msg = msg.replace(/\{ten_hs\}/g, stu.name);
-    msg = msg.replace(/\{ten_lop\}/g, info.cls.name);
-    msg = msg.replace(/\{cac_ky_no\}/g, cacKyNoText);
-    msg = msg.replace(/\{so_buoi_no\}/g, totalSessionsDue);
-    msg = msg.replace(/\{tong_tien\}/g, totalAmountDue.toLocaleString());
-    msg = msg.replace(/\{ngan_hang\}/g, settings.bank);
-    msg = msg.replace(/\{so_tai_khoan\}/g, settings.accountNumber || '(Chưa điền STK)');
-    msg = msg.replace(/\{chu_tai_khoan\}/g, settings.accountHolder || '(Chưa điền tên Thầy/Cô)');
-    msg = msg.replace(/\{noi_dung_ck\}/g, noiDungCk);
+    // Thay thế biến trong mẫu tin nhắn (tự động chuyển sang thư xác nhận đã đóng nếu học sinh đã hoàn thành)
+    let msg = "";
+    if (info.unpaid <= 0 && info.paidSessions > 0) {
+        let lastPayment = db.tuitions.filter(t => t.studentId == stu.id).sort((a, b) => b.id - a.id)[0];
+        let lastAmt = lastPayment ? lastPayment.amount.toLocaleString() + 'đ' : '';
+        let lastDate = lastPayment ? parseDateVi(lastPayment.date) : '';
+        msg = `[XÁC NHẬN ĐÃ NHẬN HỌC PHÍ]\nKính gửi Quý Phụ huynh em ${stu.name} (${info.cls.name}),\n\nThầy/Cô xin thông báo đã nhận đủ học phí của em ${stu.name}.\n• Tình trạng: Đã hoàn thành học phí (Tổng ${info.paidSessions} buổi)\n${lastAmt ? `• Giao dịch gần nhất: ${lastAmt} (ngày ${lastDate})\n` : ''}\nThầy/Cô xin chân thành cảm ơn Quý Phụ huynh đã luôn đồng hành cùng lớp học!`;
+    } else {
+        msg = settings.template;
+        msg = msg.replace(/\{ten_hs\}/g, stu.name);
+        msg = msg.replace(/\{ten_lop\}/g, info.cls.name);
+        msg = msg.replace(/\{cac_ky_no\}/g, cacKyNoText);
+        msg = msg.replace(/\{so_buoi_no\}/g, totalSessionsDue);
+        msg = msg.replace(/\{tong_tien\}/g, totalAmountDue.toLocaleString());
+        msg = msg.replace(/\{ngan_hang\}/g, settings.bank);
+        msg = msg.replace(/\{so_tai_khoan\}/g, settings.accountNumber || '(Chưa điền STK)');
+        msg = msg.replace(/\{chu_tai_khoan\}/g, settings.accountHolder || '(Chưa điền tên Thầy/Cô)');
+        msg = msg.replace(/\{noi_dung_ck\}/g, noiDungCk);
+    }
 
     document.getElementById('zalo-send-text').value = msg;
 

@@ -66,6 +66,66 @@ body { background-color: #e2e8f0; color: var(--text-main); display: flex; justif
 .tab-btn { flex: 1; text-align: center; padding: 10px 4px; border-radius: 10px; font-weight: 700; font-size: 0.85rem; color: var(--text-muted); cursor: pointer; transition: 0.3s; white-space: nowrap;}
 .tab-btn.active { background: white; color: var(--primary); box-shadow: var(--shadow-sm);}
 
+/* Công tắc gạt học phí Chưa đóng / Đã đóng */
+.tuition-toggle-wrap {
+    display: flex;
+    background: #f1f5f9;
+    border-radius: 14px;
+    padding: 4px;
+    gap: 4px;
+    border: 1px solid #e2e8f0;
+}
+.tuition-toggle-btn {
+    flex: 1;
+    padding: 10px 6px;
+    border-radius: 10px;
+    font-size: 0.86rem;
+    font-weight: 700;
+    color: #64748b;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+.tuition-toggle-btn .badge-count {
+    font-size: 0.72rem;
+    padding: 1px 7px;
+    border-radius: 10px;
+    background: #e2e8f0;
+    color: #475569;
+    font-weight: 800;
+}
+.tuition-toggle-btn.active {
+    background: white;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.tuition-toggle-btn.active#tab-btn-unpaid {
+    color: #ea580c;
+}
+.tuition-toggle-btn.active#tab-btn-unpaid .badge-count {
+    background: #ffedd5;
+    color: #c2410c;
+}
+.tuition-toggle-btn.active#tab-btn-paid {
+    color: #16a34a;
+}
+.tuition-toggle-btn.active#tab-btn-paid .badge-count {
+    background: #dcfce7;
+    color: #15803d;
+}
+.tuition-toggle-btn.active#tab-btn-all {
+    color: #0284c7;
+}
+.tuition-toggle-btn.active#tab-btn-all .badge-count {
+    background: #e0f2fe;
+    color: #0369a1;
+}
+
 /* Menu phụ (Thêm) */
 .dashboard-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;}
 .menu-card { background: var(--bg-surface); padding: 16px; border-radius: 16px; box-shadow: var(--shadow-sm); display: flex; align-items: center; gap: 12px; cursor: pointer; border: 1px solid #f1f5f9;}
@@ -199,6 +259,7 @@ input:focus, select:focus { border-color: var(--primary); background: white; box
 .tuition-card-item.danger-border { border-left: 5px solid var(--danger); }
 .tuition-card-item.warning-border { border-left: 5px solid var(--warning); }
 .tuition-card-item.info-border { border-left: 5px solid var(--primary); }
+.tuition-card-item.success-border { border-left: 5px solid var(--success); }
 
 .cycle-row-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; background: #f8fafc; border-radius: 8px; margin-top: 6px; font-size: 0.82rem; border: 1px solid #e2e8f0; }
 .cycle-row-item.highlight-danger { background: #fef2f2; border-color: #fecaca; }
