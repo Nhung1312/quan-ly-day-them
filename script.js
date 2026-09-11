@@ -1810,22 +1810,26 @@ window.openAddStudentForClass = openAddStudentForClass;
 window.renderStatistics = renderStatistics;
 window.exportTuitionExcel = exportTuitionExcel;
 window.logoutApp = logoutApp;
-// ================= HỆ THỐNG THÔNG BÁO CẬP NHẬT TỰ ĐỘNG =================
-setTimeout(() => {
-    // 🔴 MỖI LẦN CẬP NHẬT APP, BẠN CHỈ CẦN SỬA SỐ NÀY (VD: "1.0.4", "1.0.5")
-    const APP_VERSION = "1.0.3"; 
-    
-    // 🔴 SỬA NỘI DUNG THÔNG BÁO Ở ĐÂY
-    const THONG_BAO = "📢 THÔNG BÁO TỪ ADMIN:\n\nPhần mềm vừa được cập nhật tính năng mới (Xuất báo cáo Excel và Tối ưu tốc độ).\n\n⚠️ ĐỂ ĐẢM BẢO AN TOÀN DỮ LIỆU: Thầy cô vui lòng vào mục 'Thêm' -> 'Cài đặt dữ liệu' -> bấm 'TẢI XUỐNG BẢN SAO LƯU' ngay nhé!";
 
-    // Logic kiểm tra và hiển thị
-    let savedVersion = localStorage.getItem('current_app_version');
-    if (savedVersion !== APP_VERSION) {
-        try {
-            alert(THONG_BAO);
-        } catch (e) {
-            console.log(THONG_BAO);
+// ================= HỆ THỐNG THÔNG BÁO CẬP NHẬT TỰ ĐỘNG =================
+const APP_LATEST_VERSION = "1.1"; 
+
+document.addEventListener("DOMContentLoaded", function() {
+    setTimeout(() => {
+        const userSavedVersion = localStorage.getItem("gv_app_version");
+        if (userSavedVersion !== APP_LATEST_VERSION) {
+            const updateModal = document.getElementById("updateNoticeModal");
+            if (updateModal) {
+                updateModal.style.display = "block";
+            }
         }
-        localStorage.setItem('current_app_version', APP_VERSION); // Lưu lại mốc để lần sau mở app không bị hiện lại
+    }, 1500); // Đợi 1.5 giây sau khi load app mới hiện popup để không ảnh hưởng trang chính
+});
+
+window.closeUpdateNotice = function() {
+    const updateModal = document.getElementById("updateNoticeModal");
+    if (updateModal) {
+        updateModal.style.display = "none";
     }
-}, 2000); // Chờ 2 giây sau khi app load xong trang chủ mới bật thông báo
+    localStorage.setItem("gv_app_version", APP_LATEST_VERSION);
+};
