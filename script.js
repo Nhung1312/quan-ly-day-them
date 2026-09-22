@@ -53,6 +53,17 @@ if (btnLogin && auth && provider) {
     });
 }
 
+// =========================================================================
+// CẤU HÌNH GIỚI HẠN DÙNG THỬ (TRIAL LIMIT CONFIGURATION)
+// - false: TẠM TẮT giới hạn 30 ngày. Tất cả tài khoản đăng nhập đều được
+//   sử dụng miễn phí hoàn toàn, không giới hạn thời gian, không bị khóa,
+//   không hiển thị màn hình thu phí hoặc cảnh báo số ngày còn lại.
+// - true: BẬT LẠI cơ chế dùng thử 30 ngày ban đầu (kiểm tra daysLeft, hiện
+//   cảnh báo khi còn <= 5 ngày, khóa ứng dụng khi hết hạn <= 0 ngày).
+// =========================================================================
+const ENABLE_TRIAL_LIMIT = false;
+window.ENABLE_TRIAL_LIMIT = ENABLE_TRIAL_LIMIT;
+
 let currentUser = null; 
 
 if (auth) {
@@ -65,39 +76,78 @@ onAuthStateChanged(auth, async (user) => {
         const userRef = doc(firestoreDb, 'nguoi_dung', user.uid);
         let hasAccess = true; 
 
+        // Khởi tạo trạng thái ẩn màn hình thu phí và banner cảnh báo
+        const manHinhThuPhi = document.getElementById('man-hinh-thu-phi');
+        const trialBanner = document.getElementById('trial-warning-banner');
+        if (manHinhThuPhi) manHinhThuPhi.style.display = 'none';
+        if (trialBanner) trialBanner.style.display = 'none';
+
         try {
             const docUserSnap = await getDoc(userRef);
             const ngayHienTai = new Date();
 
+            // Nếu người dùng mới, vẫn lưu thông tin đăng ký và hạn 30 ngày vào Firestore để phục vụ khi bật lại
             if (!docUserSnap.exists()) {
                 let ngayHetHan = new Date();
                 ngayHetHan.setDate(ngayHienTai.getDate() + 30);
-                await setDoc(userRef, { email: user.email, ngay_dang_ky: ngayHienTai.toISOString(), ngay_het_han: ngayHetHan.toISOString() });
-            } else {
-                const duLieu = docUserSnap.data();
-                const ngayHetHan = new Date(duLieu.ngay_het_han);
-                const timeDiff = ngayHetHan.getTime() - ngayHienTai.getTime();
-                const daysLeft = Math.ceil(timeDiff / (1000 * 3600 * 24));
+                await setDoc(userRef, { 
+                    email: user.email, 
+                    ngay_dang_ky: ngayHienTai.toISOString(), 
+                    ngay_het_han: ngayHetHan.toISOString() 
+                });
+            }
 
-                if (daysLeft <= 0) {
-                    hasAccess = false;
-                    document.getElementById('man-hinh-thu-phi').style.display = 'block';
-                    let emailElements = document.getElementsByClassName('email-user');
-                    for (let i = 0; i < emailElements.length; i++) { emailElements[i].innerText = user.email.split('@')[0]; }
-                } else {
-                    document.getElementById('man-hinh-thu-phi').style.display = 'none';
-                    if (daysLeft <= 5) {
-                        const banner = document.getElementById('trial-warning-banner');
-                        if (banner) {
-                            banner.style.display = 'flex';
-                            document.getElementById('trial-days-left').innerText = daysLeft;
-                            const upgradePrefix = document.getElementById('upgrade-email-prefix');
-                            if (upgradePrefix) upgradePrefix.innerText = user.email.split('@')[0];
+            // ================= CƠ CHẾ KIỂM TRA DÙNG THỬ 30 NGÀY =================
+            // Khi ENABLE_TRIAL_LIMIT = true: Kích hoạt kiểm tra số ngày còn lại (daysLeft) và khóa app
+            // Khi ENABLE_TRIAL_LIMIT = false: Bỏ qua kiểm tra hết hạn, cấp quyền sử dụng miễn phí hoàn toàn
+            if (ENABLE_TRIAL_LIMIT) {
+                let duLieu = docUserSnap.exists() ? docUserSnap.data() : null;
+                if (!duLieu) {
+                    let newSnap = await getDoc(userRef);
+                    if (newSnap.exists()) duLieu = newSnap.data();
+                }
+
+                if (duLieu && duLieu.ngay_het_han) {
+                    const ngayHetHan = new Date(duLieu.ngay_het_han);
+                    const timeDiff = ngayHetHan.getTime() - ngayHienTai.getTime();
+                    const daysLeft = Math.ceil(timeDiff / (1000 * 3600 * 24));
+
+                    if (daysLeft <= 0) {
+                        hasAccess = false;
+                        if (manHinhThuPhi) manHinhThuPhi.style.display = 'block';
+                        let emailElements = document.getElementsByClassName('email-user');
+                        for (let i = 0; i < emailElements.length; i++) { 
+                            emailElements[i].innerText = user.email.split('@')[0]; 
+                        }
+                    } else {
+                        if (manHinhThuPhi) manHinhThuPhi.style.display = 'none';
+                        if (daysLeft <= 5) {
+                            if (trialBanner) {
+                                trialBanner.style.display = 'flex';
+                                const trialDaysEl = document.getElementById('trial-days-left');
+                                if (trialDaysEl) trialDaysEl.innerText = daysLeft;
+                                const upgradePrefix = document.getElementById('upgrade-email-prefix');
+                                if (upgradePrefix) upgradePrefix.innerText = user.email.split('@')[0];
+                            }
                         }
                     }
                 }
+            } else {
+                // TẠM TẮT GIỚI HẠN:
+                // - hasAccess luôn = true
+                // - Không khóa ứng dụng, không hiển thị màn hình thu phí
+                // - Không hiển thị banner cảnh báo số ngày còn lại
+                hasAccess = true;
+                if (manHinhThuPhi) manHinhThuPhi.style.display = 'none';
+                if (trialBanner) trialBanner.style.display = 'none';
             }
-        } catch (error) { console.log("Lỗi kiểm tra bản quyền:", error); }
+        } catch (error) { 
+            console.log("Lỗi kiểm tra bản quyền:", error);
+            // Khi tạm tắt giới hạn, luôn đảm bảo cấp quyền truy cập để người dùng không bị gián đoạn
+            if (!ENABLE_TRIAL_LIMIT) {
+                hasAccess = true;
+            }
+        }
 
         if (hasAccess) {
             const docRef = doc(firestoreDb, "DuLieuDayThem", user.uid);
