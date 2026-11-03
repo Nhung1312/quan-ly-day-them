@@ -141,7 +141,11 @@
                         <i class="fas fa-qrcode"></i> Tải QR & Cài đặt
                     </button>
                 </div>
-                
+                <div class="tuition-method-switch" role="group" aria-label="Chọn phương thức thu học phí">
+                    <button type="button" id="tuition-method-sessions" class="active" onclick="switchTuitionMethod('sessions')">Theo mốc buổi</button>
+                    <button type="button" id="tuition-method-monthly" onclick="switchTuitionMethod('monthly')">Theo tháng</button>
+                </div>
+                <div id="tuition-sessions-panel">
                 <div class="tuition-summary mb-15">
                     <div class="ts-box"><p>Tổng nợ / Dự thu</p><h3 class="text-orange" id="ts-expected">0đ</h3></div>
                     <div class="ts-box"><p>Thực tế đã thu</p><h3 class="text-green" id="ts-collected">0đ</h3></div>
@@ -199,6 +203,20 @@
 
                 <div class="section-title mt-20"><h3>Lịch sử đóng tiền (30GD gần nhất)</h3></div>
                 <div id="tuition-history-list" class="list-container" style="padding-bottom: 70px;"></div>
+                </div>
+                <div id="tuition-monthly-panel" class="hidden">
+                    <div class="monthly-filter-row">
+                        <div class="input-group"><label for="monthly-tuition-month">Chọn tháng</label><input type="month" id="monthly-tuition-month" onchange="renderMonthlyTuition()"></div>
+                        <div class="input-group"><label for="monthly-tuition-class">Nhóm lớp</label><select id="monthly-tuition-class" onchange="renderMonthlyTuition()"><option value="ALL">Tất cả nhóm thu theo tháng</option></select></div>
+                    </div>
+                    <div class="tuition-summary mb-15">
+                        <div class="ts-box"><p>Còn phải thu</p><h3 class="text-orange" id="monthly-total-due">0đ</h3></div>
+                        <div class="ts-box"><p>Đã thu cho tháng</p><h3 class="text-green" id="monthly-total-paid">0đ</h3></div>
+                    </div>
+                    <p class="monthly-tuition-note">Mỗi tháng tính số buổi lớp <b>đã dạy</b>. Tiền của từng học sinh tính theo số buổi được điểm danh <b>có mặt</b> × học phí/buổi; buổi nghỉ không tính. Dữ liệu thu theo mốc buổi được giữ nguyên.</p>
+                    <button type="button" class="btn-primary w-full monthly-export-btn" onclick="exportMonthlyTuitionExcel()"><i class="fas fa-file-excel"></i> Xuất Excel học phí tháng</button>
+                    <div id="monthly-tuition-list" class="monthly-tuition-list" aria-live="polite"></div>
+                </div>
             </section>
 
             <!-- ================= THÊM (Mở rộng) ================= -->
@@ -265,7 +283,7 @@
     </div>
 
     <!-- ================= CÁC MODAL ================= -->
-    <div id="modal-add-class" class="modal"><div class="modal-content"><div class="modal-header"><h3>Thông tin nhóm lớp</h3><div class="close" onclick="closeModal('modal-add-class')"><i class="fas fa-times"></i></div></div><div class="modal-body"><input type="hidden" id="class-id"><div class="input-group"><label>Tên nhóm lớp *</label><input type="text" id="cl-name" placeholder="VD: Toán 8A"></div><div class="form-row"><div class="input-group"><label>Học phí / Buổi (VNĐ) *</label><input type="number" id="cl-fee" value="80000"></div><div class="input-group"><label>Mốc thu (Số buổi) *</label><input type="number" id="cl-cycle" value="10"></div></div><div class="input-group"><label>Ngày bắt đầu *</label><input type="date" id="cl-start"></div><div class="section-title mt-15"><h4>Thời khóa biểu mặc định</h4><button class="btn-sm" onclick="addTkbRow()"><i class="fas fa-plus"></i> Buổi</button></div><div id="tkb-container"></div></div><div class="modal-footer"><button class="btn-primary w-full" onclick="saveClass()">Lưu Nhóm Lớp</button></div></div></div>
+    <div id="modal-add-class" class="modal"><div class="modal-content"><div class="modal-header"><h3>Thông tin nhóm lớp</h3><div class="close" onclick="closeModal('modal-add-class')"><i class="fas fa-times"></i></div></div><div class="modal-body"><input type="hidden" id="class-id"><div class="input-group"><label>Tên nhóm lớp *</label><input type="text" id="cl-name" placeholder="VD: Toán 8A"></div><div class="input-group"><label for="cl-tuition-mode">Cách thu học phí của nhóm *</label><select id="cl-tuition-mode" onchange="toggleClassTuitionMode()"><option value="sessions">Theo mốc số buổi (như cũ)</option><option value="monthly">Theo tháng (dựa trên số buổi có mặt)</option></select><small class="text-muted" style="line-height:1.5;">Mỗi nhóm có cách thu riêng. Không cho đổi cách thu nếu đã có buổi hoàn thành hoặc giao dịch học phí.</small></div><div class="form-row"><div class="input-group"><label>Học phí / Buổi (VNĐ) *</label><input type="number" id="cl-fee" value="80000"></div><div class="input-group" id="cl-cycle-group"><label>Mốc thu (Số buổi) *</label><input type="number" id="cl-cycle" value="10"></div></div><div class="input-group"><label>Ngày bắt đầu *</label><input type="date" id="cl-start"></div><div class="section-title mt-15"><h4>Thời khóa biểu mặc định</h4><button class="btn-sm" onclick="addTkbRow()"><i class="fas fa-plus"></i> Buổi</button></div><div id="tkb-container"></div></div><div class="modal-footer"><button class="btn-primary w-full" onclick="saveClass()">Lưu Nhóm Lớp</button></div></div></div>
     
     <div id="modal-add-student" class="modal"><div class="modal-content"><div class="modal-header"><h3>Hồ sơ học sinh</h3><div class="close" onclick="closeModal('modal-add-student')"><i class="fas fa-times"></i></div></div><div class="modal-body"><input type="hidden" id="stu-id"><div class="input-group"><label>Chọn nhóm lớp *</label><select id="stu-class"></select></div><div class="input-group"><label>Họ và tên *</label><input type="text" id="stu-name"></div><div class="form-row"><div class="input-group"><label>Số điện thoại PH</label><input type="tel" id="stu-phone"></div><div class="input-group"><label>Ngày bắt đầu</label><input type="date" id="stu-start"></div></div><div class="input-group"><label>Học phí tùy chỉnh (Nếu có)</label><input type="number" id="stu-custom-fee" placeholder="VD: 70000"></div></div><div class="modal-footer"><button class="btn-primary w-full" onclick="saveStudent()">Lưu Học Sinh</button></div></div></div>
     
