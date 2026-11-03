@@ -10,13 +10,22 @@ service cloud.firestore {
             || (paidUntil is timestamp && request.time < paidUntil));
     }
 
+    // Chuyen tiep 14 ngay tu 03/11/2026: cho phien ban cu co thoi gian
+    // tai sao luu / dang nhap app moi de tao ban quyen.
+    // Tu 07:00 ngay 17/11/2026 (gio Viet Nam), bat buoc giay phep server.
+    function canWriteStandardTuition(userId) {
+      return request.time < timestamp.date(2026, 11, 17)
+        || standardLicenseActive(userId);
+    }
+
     // 1. APP QUAN LY DAY THEM BAN THUONG
     match /DuLieuDayThem/{userId} {
       allow read: if request.auth != null && request.auth.uid == userId;
-      // Giai doan B: can giay phep hop le tu SERVER de ghi; sau het han van doc/sao luu.
+      // Sau 14 ngay chuyen tiep, can giay phep hop le de ghi Cloud.
+      // Quyen doc de sao luu KHONG bao gio phu thuoc ngay het han.
       allow create, update, delete: if request.auth != null
         && request.auth.uid == userId
-        && standardLicenseActive(userId);
+        && canWriteStandardTuition(userId);
     }
 
     match /nguoi_dung/{userId} {
