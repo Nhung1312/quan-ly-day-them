@@ -1,31 +1,50 @@
-# Hướng dẫn Admin – gia hạn gói 99.000đ/năm
+# Hướng dẫn Admin – bảo vệ bản quyền app Dạy thêm bản thường (99.000đ/năm)
 
-## Hiện trạng
-- App bản thường đã bật hiển thị dùng thử 30 ngày trên **tài khoản đăng nhập Google**, cảnh báo trước 3 ngày và màn hình gia hạn khi quá hạn.
-- QR vẫn là ảnh `qr-thu-phi.jpg` có sẵn, không chỉnh sửa. Admin cần **quét thử và xác nhận số tiền/đích nhận** trước khi quảng bá thu phí 99.000đ.
-- **Không có xác minh giao dịch tự động**: thanh toán qua QR không tự gia hạn; Admin phải kiểm tra tiền thật rồi cập nhật hạn sử dụng.
-- Chế độ **Khách/ngoại tuyến** hiện không được kiểm soát bằng giấy phép tài khoản Google và cần một phương án riêng nếu muốn thu phí tất cả người dùng.
-- Việc kiểm soát thời hạn hiện xử lý trong JavaScript trình duyệt: chưa thay thế được phân quyền Firestore/kiểm tra máy chủ. Không xem đây là cơ chế chống gian lận an toàn.
+## Phạm vi và giới hạn
+- App **bản thường** dùng hồ sơ **`ban_quyen_thuong/{uid}`**, tách khỏi `nguoi_dung/{uid}` mà bản PRO cũng đang đọc.
+- Ngày dùng thử `trial_started_at` là kiểu **Timestamp** được máy chủ ghi khi đăng nhập lần đầu (30 ngày).
+- Chỉ Admin cập nhật `paid_until` kiểu **Timestamp**. Người dùng không có quyền sửa/xóa hồ sơ bản quyền. Không tin các ngày dạng chuỗi trong `nguoi_dung` để gia hạn bản thường.
+- Hết hạn: người dùng vẫn được **đọc và sao lưu** dữ liệu của mình; ghi dữ liệu lên Firestore sẽ bị từ chối sau khi kích hoạt Rules giai đoạn B.
+- **KHÔNG tự gia hạn khi quét QR**. Admin đối chiếu tiền thực nhận rồi gia hạn.
+- Ảnh QR hiện tại vẫn giữ nguyên; phải kiểm tra người nhận, ngân hàng và số tiền 99.000đ bằng ứng dụng ngân hàng trước khi thu thật.
 
-## Khách hàng gia hạn
-1. Giáo viên đăng nhập bằng đúng Google đã đăng ký app, vào Gia hạn 99K/năm.
-2. Quét QR cũ, kiểm tra **đúng số tiền 99.000đ** và thông tin người nhận trước khi xác nhận ngân hàng.
-3. Bấm **Sao chép thông tin gia hạn** và gửi Admin qua Zalo 0775172026 kèm bằng chứng giao dịch; Admin đối chiếu tiền thực nhận, người chuyển và nội dung.
-4. Admin mở **Firebase Console → Firestore Database → Data → nguoi_dung → {UID}** đúng tài khoản được yêu cầu.
-5. **Tạo/cập nhật trường riêng `ngay_het_han_thuong`** (kiểu string ISO 8601), ví dụ `2027-12-03T00:00:00.000+07:00`. Không chỉnh trường chung `ngay_het_han`: app Trung tâm PRO có thể dùng chung tài khoản Firebase. Chỉ gia hạn sau khi xác minh thanh toán. Chính sách đề xuất: cộng 1 năm từ ngày hết hạn hiệu lực hiện tại nếu còn hạn, hoặc từ ngày xác nhận thanh toán nếu đã hết hạn.
-6. Hướng dẫn giáo viên bấm **Đã được gia hạn? Kiểm tra lại** để tải trạng thái mới.
+## Thứ tự triển khai an toàn – KHÔNG đảo ngược
+1. Trước tiên sao lưu Rules hiện tại từ Firebase Console và sao lưu dữ liệu thử nghiệm.
+2. Publish toàn bộ file [`firebase-rules/01_chuan_bi_khong_khoa_app.rules`](./firebase-rules/01_chuan_bi_khong_khoa_app.rules) vào **Firebase Project `quan-ly-day-them-f7b1e`**. Đây là bước chỉ thêm hồ sơ giấy phép mới; **chưa hạn chế quyền ghi** `DuLieuDayThem`, nên bản cũ vẫn dùng được.
+3. Kiểm thử Rules giai đoạn A bằng Rules Playground và một tài khoản thử: đăng ký `ban_quyen_thuong/{uid}` với `serverTimestamp`, chỉ chính chủ đọc; không sửa được `paid_until`, `trial_started_at`.
+4. Merge PR nâng cấp và xác nhận trang web đang chạy **đúng bản mới**. Đăng nhập bằng tài khoản thử, xác minh có hồ sơ giấy phép riêng trong Firestore, thử tạo lớp, lưu điểm danh, thu học phí, tải sao lưu. **Kiểm tra cả PRO**.
+5. **Chỉ sau khi toàn bộ kiểm thử đạt**, Publish toàn bộ file [`firebase-rules/02_kich_hoat_bao_ve_thu_phi.rules`](./firebase-rules/02_kich_hoat_bao_ve_thu_phi.rules). Giai đoạn B bắt buộc giấy phép còn hạn để tạo/sửa/xóa `DuLieuDayThem`, nhưng vẫn cho đọc/sao lưu.
+6. Kiểm thử tài khoản chưa hạn, hết hạn, Admin đã gia hạn; một tài khoản khác không thể đọc/ghi dữ liệu người khác. Lưu ảnh kết quả **ALLOW/DENY** từ Rules Playground để đối chiếu.
+7. Khi cần quay lại trong trường hợp sự cố: **Publish lại Rules giai đoạn A**, không xóa dữ liệu và không sửa hồ sơ bản quyền. Rules có thể mất thời gian để áp dụng lên các kết nối đang mở.
 
-**Không sửa các trường** `ngay_dang_ky`, `ngay_het_han` hay dữ liệu lớp trong `DuLieuDayThem/{UID}`. Việc cập nhật thời hạn phải được giới hạn chỉ Admin bằng Firestore Security Rules/backend tin cậy. Nếu người dùng thường có thể tự sửa `ngay_het_han_thuong` hoặc `ngay_het_han` thì chức năng thu phí không an toàn.
+**Quan trọng:** Các file trong GitHub không tự Publish lên Firebase. Không dùng `firebase deploy` với một Rules file thiếu các đường dẫn GVCN/GVBM, vì có thể ghi đè toàn bộ Rules của dự án.
 
-## Thời gian và sao lưu
-- Tài khoản tạo mới có hạn dùng thử 30 ngày kể từ khi tạo hồ sơ `nguoi_dung`. Khi chưa có `ngay_het_han_thuong`, app bản thường dùng mốc cũ `ngay_het_han` để tương thích; khi Admin gia hạn sẽ ưu tiên mốc riêng.
-- Tài khoản cũ có thời gian chuyển tiếp đến **00:00 ngày 03/12/2026 (GMT+7)** nếu ngày hết hạn cũ sớm hơn mốc đó. Nếu đã được gia hạn xa hơn, giữ ngày cũ.
-- Khi còn từ 3 ngày trở xuống, màn hình Tổng quan hiển thị nút **Sao lưu dữ liệu** và **Gia hạn**.
-- Sau khi hết hạn, app vẫn tải dữ liệu từ Firestore (nếu kết nối/quyền cho phép) và hiển thị nút **TẢI BẢN SAO LƯU JSON**. Không được xóa dữ liệu khi hết hạn.
-- Nếu mất mạng hoặc quyền đọc Firestore bị từ chối, file JSON có thể chỉ chứa bản trên máy. Hướng dẫn người dùng thử kết nối lại trước khi sao lưu và giữ nhiều bản sao lưu.
+## Thu phí và gia hạn do Admin duyệt
+1. Giáo viên chuyển khoản **99.000đ/năm**, xác nhận đúng người nhận và gửi Zalo Admin 0775172026 (email đăng nhập, mã người dùng và thông tin giao dịch).
+2. Admin đối chiếu ngân hàng thật. Không chấp nhận nút “Đã chuyển tiền” làm bằng chứng tự động.
+3. Mở Firebase Console → Firestore Database → Data → **`ban_quyen_thuong` → `{uid}`**.
+4. Chỉ khi đã xác minh, thêm hoặc cập nhật **`paid_until` kiểu Timestamp**, không phải chuỗi. Ví dụ chọn ngày và giờ tương đương 12 tháng sau hạn hiện tại nếu còn hạn, hoặc 12 tháng sau ngày thanh toán nếu đã hết hạn. Không sửa `trial_started_at`.
+5. Giáo viên bấm “Đã được gia hạn? Kiểm tra lại” hoặc tải lại trang, trình duyệt đọc lại giấy phép từ máy chủ.
 
-## Việc còn phải làm trước khi thu tiền quy mô lớn
-- Kiểm tra/publish Firestore Rules: người dùng chỉ đọc trạng thái của mình, không được tự cập nhật thời hạn hoặc nâng quyền; cập nhật do Admin/backend bảo mật.
-- Đánh giá cơ chế truy cập khách: hiện vẫn có thể dùng phần ngoại tuyến mà không đăng nhập.
-- Kiểm thử thực tế với tài khoản mới, tài khoản cũ, ngày hết hạn, đăng nhập nhiều thiết bị, Cloud mất kết nối, Admin gia hạn và sao lưu.
-- Nếu cần tự cộng hạn ngay khi chuyển khoản, phải triển khai backend nhận thông báo thanh toán có xác thực rồi mới cập nhật bản quyền; việc này **chưa được xây dựng**.
+## Dữ liệu cũ và app PRO
+- Không xóa hay ghi đè dữ liệu `DuLieuDayThem/{uid}`.
+- Không đổi cấu trúc `UsersPro`, `DuLieuGVCN`, `DuLieuGVBM`, `class_members`, `classes/*/activityLogs`.
+- Hạn cũ trong `nguoi_dung/{uid}.ngay_het_han_thuong` **không còn được dùng để quyết định quyền** do từng có thể tự khai. Nếu giáo viên đã đóng tiền từ trước, Admin xác minh và chuyển hạn thật sang `ban_quyen_thuong/{uid}.paid_until`.
+- Người dùng đang lưu ngoại tuyến bằng chế độ Khách: trên màn hình đăng nhập mới có nút **Sao lưu dữ liệu cũ trên máy**; phải tải JSON trước khi đổi trình duyệt.
+- Quyền truy cập từ trình duyệt không thể chống việc sao chép mã nguồn hoặc sử dụng một bản ngoại tuyến đã tải từ trước. Nhưng sau khi Publish Rules B, Firestore sẽ từ chối **ghi Cloud** nếu không còn giấy phép.
+
+## Kịch bản cần thử bằng Emulator/Rules Playground
+- Người chưa đăng nhập tạo/đọc/sửa giấy phép → DENY.
+- Người A tạo giấy phép của chính A có một trường `trial_started_at = request.time` → ALLOW.
+- Người A tự ghi `trial_started_at` là thời điểm trong tương lai → DENY.
+- Người A tự thêm `paid_until` lúc tạo → DENY.
+- Người A sửa `trial_started_at` hoặc `paid_until` sau khi tạo → DENY.
+- Người A đọc giấy phép của B → DENY.
+- Hết hạn: A đọc `DuLieuDayThem/A` → ALLOW, ghi → DENY (giai đoạn B).
+- Còn hạn: A ghi `DuLieuDayThem/A` → ALLOW (giai đoạn B).
+- B không thể đọc hoặc ghi `DuLieuDayThem/A`.
+- GVCN, GVBM và PRO vẫn thao tác được ở những đường dẫn vốn được phép.
+
+## Chưa xác minh trực tiếp
+- Các Rules ở repo mới được kiểm tra cú pháp theo mẫu và logic bằng mô phỏng. **Chưa chạy Firebase Emulator, chưa Publish, chưa thử kết nối Firebase thật**.
+- Chưa xác minh được domain website đang dùng đã tự triển khai từ GitHub `main` hay chưa.
