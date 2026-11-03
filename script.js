@@ -229,7 +229,10 @@ function switchView(id, el) {
     if(id === 'view-home') updateDashboard();
     if(id === 'view-classes') renderClasses();
     if(id === 'view-students') renderStudents();
-    if(id === 'view-tuition') renderTuition();
+    if(id === 'view-tuition') {
+        if (currentTuitionMethod === 'monthly') renderMonthlyTuition();
+        else renderTuition();
+    }
     if(id === 'view-statistics') renderStatistics();
     if(id === 'view-calendar') {
         let activeTabBtn = document.querySelector('#view-calendar .tab-btn.active');
@@ -968,6 +971,7 @@ function removeVietnameseTones(str) {
 function getStudentTuitionInfo(stu) {
     let cls = db.classes.find(c => c.id == stu.classId);
     if (!cls) return null;
+    if (getClassTuitionMethod(cls) === 'monthly') return null;
 
     let cycle = parseInt(cls.cycle) || 10;
     let fee = parseInt(stu.customFee) || parseInt(cls.fee) || 0;
@@ -1065,6 +1069,194 @@ function calculateTuitionDue() {
 }
 
 let currentTuitionTab = 'unpaid';
+
+// ================= HỌC PHÍ THEO THÁNG: TÁCH BIỆT CHU KỲ CŨ =================
+let currentTuitionMethod = 'sessions';
+let monthlyPaymentSaving = false;
+function getClassTuitionMethod(cls) {
+    return cls && cls.tuitionMode === 'monthly' ? 'monthly' : 'sessions';
+}
+function toggleClassTuitionMode() {
+    const select = document.getElementById('cl-tuition-mode');
+    const group = document.getElementById('cl-cycle-group');
+    if (select && group) group.classList.toggle('hidden', select.value === 'monthly');
+}
+function switchTuitionMethod(mode) {
+    currentTuitionMethod = mode === 'monthly' ? 'monthly' : 'sessions';
+    document.getElementById('tuition-sessions-panel').classList.toggle('hidden', currentTuitionMethod !== 'sessions');
+    document.getElementById('tuition-monthly-panel').classList.toggle('hidden', currentTuitionMethod !== 'monthly');
+    document.getElementById('tuition-method-sessions').classList.toggle('active', currentTuitionMethod === 'sessions');
+    document.getElementById('tuition-method-monthly').classList.toggle('active', currentTuitionMethod === 'monthly');
+    if (currentTuitionMethod === 'monthly') {
+        const monthInput = document.getElementById('monthly-tuition-month');
+        if (!monthInput.value) monthInput.value = weekLocalDateKey(new Date()).slice(0, 7);
+        renderMonthlyTuition();
+    } else renderTuition();
+}
+
+function getMonthlyTuitionBill(student, month) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return null;
+    const cls = db.classes.find(c => String(c.id) === String(student.classId));
+    if (!cls || getClassTuitionMethod(cls) !== 'monthly') return null;
+    const classes = db.sessions.filter(s =>
+        String(s.classId) === String(cls.id) && s.status === 'completed' &&
+        typeof s.date === 'string' && s.date.slice(0, 7) === month);
+    const completedIds = new Set(classes.map(s => String(s.id)));
+    const presentIds = new Set();
+    db.attendance.forEach(a => {
+        if (String(a.studentId) === String(student.id) && a.status === 'có mặt' &&
+            completedIds.has(String(a.sessionId))) presentIds.add(String(a.sessionId));
+    });
+    const customFee = Number(student.customFee);
+    const fee = customFee > 0 ? customFee : (Number(cls.fee) || 0);
+    const billed = presentIds.size * fee;
+    const payments = db.tuitions.filter(t =>
+        t.billingMode === 'monthly' && t.billingMonth === month &&
+        String(t.studentId) === String(student.id) && String(t.classId) === String(cls.id));
+    const paid = payments.reduce((total, p) => total + (Number(p.amount) || 0), 0);
+    return { student, cls, month, classSessions: classes.length,
+        attended: presentIds.size, fee, billed, paid, due: Math.max(0, billed - paid), payments };
+}
+
+function renderMonthlyTuition() {
+    const list = document.getElementById('monthly-tuition-list');
+    const input = document.getElementById('monthly-tuition-month');
+    const select = document.getElementById('monthly-tuition-class');
+    if (!list || !input || !select) return;
+    if (!input.value) input.value = weekLocalDateKey(new Date()).slice(0, 7);
+    const month = input.value;
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+        list.textContent = 'Vui lòng chọn một tháng hợp lệ.';
+        return;
+    }
+    const monthlyClasses = db.classes.filter(c => getClassTuitionMethod(c) === 'monthly');
+    const currentFilter = select.value;
+    select.innerHTML = '<option value="ALL">Tất cả nhóm thu theo tháng</option>' +
+        monthlyClasses.map(c => '<option value="' + escapeWeekHtml(c.id) + '">' +
+            escapeWeekHtml(c.name) + '</option>').join('');
+    select.value = monthlyClasses.some(c => String(c.id) === currentFilter) ? currentFilter : 'ALL';
+    const shownClasses = monthlyClasses.filter(c =>
+        select.value === 'ALL' || String(c.id) === select.value);
+    let totalDue = 0, totalPaid = 0;
+    let html = '';
+
+    shownClasses.forEach(cls => {
+        const groupCompleted = db.sessions.filter(s =>
+            String(s.classId) === String(cls.id) && s.status === 'completed' &&
+            typeof s.date === 'string' && s.date.slice(0, 7) === month).length;
+        const bills = db.students.filter(stu => String(stu.classId) === String(cls.id))
+            .map(stu => getMonthlyTuitionBill(stu, month))
+            .filter(b => b && (b.student.status !== 'inactive' || b.attended > 0 || b.paid > 0));
+        const classDue = bills.reduce((a, b) => a + b.due, 0);
+        const classPaid = bills.reduce((a, b) => a + b.paid, 0);
+        totalDue += classDue;
+        totalPaid += classPaid;
+        html += '<section class="monthly-tuition-class"><div class="monthly-class-header"><strong>' +
+            escapeWeekHtml(cls.name) + '</strong><span>' + groupCompleted +
+            ' buổi đã dạy trong tháng</span></div><p class="monthly-class-total">Còn thu: ' +
+            classDue.toLocaleString('vi-VN') + 'đ · Đã thu: ' +
+            classPaid.toLocaleString('vi-VN') + 'đ</p>';
+        if (!bills.length) html += '<p class="text-muted text-sm">Chưa có học sinh để tính học phí tháng này.</p>';
+        bills.forEach(b => {
+            const status = b.billed === 0 && b.paid === 0 ? 'Chưa có buổi tính phí' :
+                (b.due === 0 ? 'Đã thanh toán' : (b.paid > 0 ? 'Còn thiếu' : 'Chưa thanh toán'));
+            html += '<div class="monthly-student-row"><div class="monthly-student-details"><strong>' +
+                escapeWeekHtml(b.student.name) + '</strong><p>Có mặt ' + b.attended +
+                '/' + b.classSessions + ' buổi × ' + b.fee.toLocaleString('vi-VN') +
+                'đ = ' + b.billed.toLocaleString('vi-VN') +
+                'đ</p><p>Đã thu ' + b.paid.toLocaleString('vi-VN') +
+                'đ · Còn thu <b>' + b.due.toLocaleString('vi-VN') +
+                'đ</b></p><span class="monthly-student-status">' + status + '</span></div>' +
+                (b.due > 0 ? '<button type="button" class="monthly-pay-btn" data-month-pay="' +
+                    escapeWeekHtml(b.student.id) + '">Thu tiền</button>' : '') + '</div>';
+            if (b.payments.length) html += '<div class="monthly-payment-history">' +
+                b.payments.map(p => '<div class="monthly-payment-record"><span>Đã thu ' +
+                    (Number(p.amount) || 0).toLocaleString('vi-VN') + 'đ ngày ' +
+                    escapeWeekHtml(p.date || '') + '</span><button type="button" ' +
+                    'data-month-delete="' + escapeWeekHtml(p.id) +
+                    '" aria-label="Hủy giao dịch tháng">Hủy</button></div>').join('') + '</div>';
+        });
+        html += '</section>';
+    });
+    if (!shownClasses.length) html = '<div class="alert-item yellow">Chưa có nhóm thu theo tháng. Vào Lớp học → tạo nhóm hoặc sửa nhóm để chọn.</div>';
+    document.getElementById('monthly-total-due').textContent = totalDue.toLocaleString('vi-VN') + 'đ';
+    document.getElementById('monthly-total-paid').textContent = totalPaid.toLocaleString('vi-VN') + 'đ';
+    list.innerHTML = html;
+    if (!list.dataset.monthlyActionsReady) {
+        list.addEventListener('click', event => {
+            const pay = event.target.closest('button[data-month-pay]');
+            const cancel = event.target.closest('button[data-month-delete]');
+            if (pay && list.contains(pay)) collectMonthlyTuition(pay.dataset.monthPay);
+            if (cancel && list.contains(cancel)) cancelMonthlyTuition(cancel.dataset.monthDelete);
+        });
+        list.dataset.monthlyActionsReady = '1';
+    }
+}
+
+async function collectMonthlyTuition(studentId) {
+    if (monthlyPaymentSaving) return;
+    const stu = db.students.find(s => String(s.id) === String(studentId));
+    const month = document.getElementById('monthly-tuition-month').value;
+    const bill = stu && getMonthlyTuitionBill(stu, month);
+    if (!bill || bill.due <= 0) return showToast('Không còn học phí cần thu cho tháng này.', 'error');
+    if (!confirm('Ghi nhận thu ' + bill.due.toLocaleString('vi-VN') + 'đ của ' +
+        bill.student.name + ' (' + bill.cls.name + ') cho tháng ' + month +
+        '?\nCó mặt ' + bill.attended + '/' + bill.classSessions + ' buổi.')) return;
+    monthlyPaymentSaving = true;
+    try {
+        const fresh = getMonthlyTuitionBill(stu, month);
+        if (!fresh || fresh.due <= 0) return;
+        db.tuitions.push({
+            id: Date.now() + Math.floor(Math.random() * 1000),
+            studentId: stu.id, classId: bill.cls.id, date: weekLocalDateKey(new Date()),
+            amount: fresh.due, billingMode: 'monthly', billingMonth: month,
+            billedSessions: fresh.attended, note: 'Học phí tháng ' + month
+        });
+        await saveData();
+        renderMonthlyTuition();
+        showToast('Đã ghi nhận học phí tháng ' + month + '.');
+    } catch (err) {
+        console.error(err);
+        showToast('Lỗi ghi nhận học phí tháng. Kiểm tra dữ liệu trước khi thu lại.', 'error');
+    } finally { monthlyPaymentSaving = false; }
+}
+
+async function cancelMonthlyTuition(id) {
+    const transaction = db.tuitions.find(t => String(t.id) === String(id) &&
+        t.billingMode === 'monthly');
+    if (!transaction) return;
+    if (!confirm('Hủy giao dịch thu ' + Number(transaction.amount).toLocaleString('vi-VN') +
+        'đ cho tháng ' + transaction.billingMonth + '?')) return;
+    db.tuitions = db.tuitions.filter(t => String(t.id) !== String(id));
+    await saveData();
+    renderMonthlyTuition();
+    showToast('Đã hủy giao dịch học phí tháng.');
+}
+
+function exportMonthlyTuitionExcel() {
+    if (typeof XLSX === 'undefined') return showToast('Chưa tải xong thư viện Excel.', 'error');
+    const month = document.getElementById('monthly-tuition-month').value;
+    const chosen = document.getElementById('monthly-tuition-class').value;
+    const rows = [['Tháng','Nhóm lớp','Buổi nhóm đã dạy','Học sinh',
+        'Số buổi có mặt','Đơn giá/buổi','Tiền cần thu','Đã thu','Còn thu']];
+    db.classes.filter(c => getClassTuitionMethod(c) === 'monthly' &&
+        (chosen === 'ALL' || String(c.id) === chosen)).forEach(cls => {
+        db.students.filter(stu => String(stu.classId) === String(cls.id)).forEach(stu => {
+            const bill = getMonthlyTuitionBill(stu, month);
+            if (!bill || (stu.status === 'inactive' && !bill.attended && !bill.paid)) return;
+            rows.push([month,cls.name,bill.classSessions,stu.name,bill.attended,
+                bill.fee,bill.billed,bill.paid,bill.due]);
+        });
+    });
+    if (rows.length === 1) return showToast('Chưa có dữ liệu tháng để xuất.', 'error');
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{wch:12},{wch:24},{wch:22},{wch:26},{wch:20},{wch:18},{wch:18},{wch:18},{wch:18}];
+    XLSX.utils.book_append_sheet(wb, ws, 'HocPhiTheoThang');
+    XLSX.writeFile(wb, 'HocPhiTheoThang_' + month + '.xlsx');
+    showToast('Đã xuất Excel học phí tháng.');
+}
+
 function setTuitionTab(tab, el) {
     currentTuitionTab = tab;
     document.querySelectorAll('.tuition-toggle-btn').forEach(b => b.classList.remove('active'));
@@ -1312,7 +1504,7 @@ function renderTuition() {
     const histList = document.getElementById('tuition-history-list');
     if (histList) {
         histList.innerHTML = '';
-        let sortedTuitions = [...db.tuitions].sort((a, b) => b.id - a.id).slice(0, 30); 
+        let sortedTuitions = db.tuitions.filter(t => t.billingMode !== 'monthly').sort((a, b) => b.id - a.id).slice(0, 30); 
         if(sortedTuitions.length === 0) {
             histList.innerHTML = '<div class="text-center text-muted" style="padding:20px;">Chưa có lịch sử thu tiền.</div>';
         } else {
@@ -2071,6 +2263,10 @@ window.executeSendAbsenceZalo = executeSendAbsenceZalo;
 window.calculateTuitionDue = calculateTuitionDue;
 window.renderTuition = renderTuition;
 window.setTuitionTab = setTuitionTab;
+window.switchTuitionMethod = switchTuitionMethod;
+window.toggleClassTuitionMode = toggleClassTuitionMode;
+window.renderMonthlyTuition = renderMonthlyTuition;
+window.exportMonthlyTuitionExcel = exportMonthlyTuitionExcel;
 window.openPayModal = openPayModal;
 window.onPayCycleSelectionChange = onPayCycleSelectionChange;
 window.confirmPayment = confirmPayment;
