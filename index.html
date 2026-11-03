@@ -619,6 +619,24 @@
                 <button class="btn-primary w-full btn-large mb-15" onclick="backupData()" style="font-weight: 800; font-size: 1.05rem;"><i class="fas fa-download"></i> TẢI XUỐNG BẢN SAO LƯU</button>
                 <button class="btn-outline w-full btn-large" onclick="document.getElementById('restore-file').click()" style="color: var(--danger); border-color: var(--danger);"><i class="fas fa-upload"></i> KHÔI PHỤC TỪ FILE</button>
                 <input type="file" id="restore-file" class="hidden" accept=".json" onchange="restoreData(event)">
+
+                <div class="reset-all-panel" style="margin-top:22px; padding:16px; background:#fff7f7; border:1px solid #fecaca; border-radius:14px;">
+                    <h4 style="font-size:1rem; color:#991b1b; margin-bottom:8px;"><i class="fas fa-eraser"></i> ĐẶT LẠI DỮ LIỆU (NHẬP MỚI)</h4>
+                    <p style="font-size:0.84rem; line-height:1.6; color:#7f1d1d; margin-bottom:12px;">
+                        Xóa toàn bộ lớp học, học sinh, lịch dạy, điểm danh, lịch nghỉ,
+                        học phí, lịch sử thu tiền và cài đặt của app này.
+                        Nếu đang đăng nhập Google, dữ liệu của app bản thường trên Firebase cũng được đặt lại.
+                        Không thể hoàn tác nếu không có file sao lưu.
+                    </p>
+                    <label for="reset-data-backup-ack" style="display:flex; align-items:flex-start; gap:10px; margin-bottom:12px; color:#7f1d1d; font-size:0.84rem; font-weight:700; cursor:pointer;">
+                        <input type="checkbox" id="reset-data-backup-ack" onchange="toggleResetDataButton()" style="margin-top:3px; width:19px; height:19px; flex-shrink:0;">
+                        <span>Tôi đã bấm "TẢI XUỐNG BẢN SAO LƯU" ở trên và giữ lại file JSON.</span>
+                    </label>
+                    <button type="button" id="reset-data-button" class="btn-primary w-full btn-large" onclick="resetAllTutoringData()" disabled style="background:#b91c1c; color:white; opacity:0.5; min-height:48px; font-weight:800;">
+                        <i class="fas fa-trash-alt"></i> XÓA TOÀN BỘ DỮ LIỆU
+                    </button>
+                </div>
+
                 <p class="text-center text-muted text-sm mt-15">Phiên bản 1.1</p>
             </div>
         </div>
