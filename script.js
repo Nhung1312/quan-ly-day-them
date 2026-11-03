@@ -77,7 +77,8 @@ let billingAccountLocked = false;
 
 function calculateAccountAccess(record, now = new Date()) {
     if (!ENABLE_TRIAL_LIMIT) return { permitted: true, daysLeft: null, transition: false };
-    const expiry = record && record.ngay_het_han ? new Date(record.ngay_het_han) : null;
+    const expiryValue = record && (record.ngay_het_han_thuong || record.ngay_het_han);
+    const expiry = expiryValue ? new Date(expiryValue) : null;
     if (!expiry || !Number.isFinite(expiry.getTime())) {
         // Không khóa dữ liệu nếu chưa có metadata hợp lệ.
         return { permitted: true, daysLeft: null, transition: false };
