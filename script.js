@@ -1963,15 +1963,45 @@ function renderClasses() {
         let nextDateText = "Chưa xác định";
         if(classSessions.length >= nextTargetIndex) { let nextSess = classSessions[nextTargetIndex - 1]; if(nextSess) nextDateText = parseDateVi(nextSess.date); } else if (classSessions.length > 0) { nextDateText = "Đang lên lịch..."; }
 
-        list.innerHTML += `<div class="sched-card" style="border-left-color: var(--primary);"><div class="sched-info"><h4 style="margin-bottom:6px;">${c.name}</h4><p class="text-sm">Học phí: ${parseInt(c.fee).toLocaleString()}đ/b • Lịch: ${tkbText || 'Chưa xếp'}</p><div style="margin-top:12px; padding:10px 12px; background:#f8fafc; border-radius:10px; border:1px solid #e2e8f0;"><div style="display:flex; justify-content:space-between; margin-bottom:5px; font-size:0.85rem; font-weight:700;"><span style="color:var(--text-main);">Đã dạy: <b class="text-blue">${completedCount}</b> buổi</span><span class="text-muted">Mốc thu: ${cycle}b</span></div><div style="font-size:0.8rem; color:#b45309; font-weight:600; display:flex; align-items:center; gap:6px;"><i class="fas fa-bolt"></i> Dự kiến thu (Buổi ${nextTargetIndex}): ${nextDateText}</div></div></div><div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid #e2e8f0; padding-top:12px; margin-top:12px;"><span class="text-sm" style="font-weight:700;"><i class="fas fa-users text-blue"></i> ${stuCount} học sinh</span><div style="display:flex; gap:8px;"><button class="btn-outline-action text-green" onclick="openAddStudentForClass(${c.id})" title="Thêm học sinh"><i class="fas fa-user-plus"></i></button><button class="btn-outline-action text-orange" onclick="editClass(${c.id})" title="Sửa nhóm"><i class="fas fa-pen"></i></button><button class="btn-outline-action text-red" onclick="deleteClass(${c.id})" title="Xóa nhóm"><i class="fas fa-trash"></i></button></div></div></div>`;
+        list.innerHTML += `<div class="sched-card" style="border-left-color: var(--primary);"><div class="sched-info"><h4 style="margin-bottom:6px;">${c.name}</h4><p class="text-sm">Học phí: ${parseInt(c.fee).toLocaleString()}đ/b • Lịch: ${tkbText || 'Chưa xếp'}</p><div style="margin-top:12px; padding:10px 12px; background:#f8fafc; border-radius:10px; border:1px solid #e2e8f0;"><div style="display:flex; justify-content:space-between; margin-bottom:5px; font-size:0.85rem; font-weight:700;"><span style="color:var(--text-main);">Đã dạy: <b class="text-blue">${completedCount}</b> buổi</span><span class="text-muted">${getClassTuitionMethod(c) === 'monthly' ? 'Thu theo tháng' : 'Mốc thu: ' + cycle + 'b'}</span></div><div style="font-size:0.8rem; color:#b45309; font-weight:600; display:flex; align-items:center; gap:6px;"><i class="fas fa-bolt"></i> ${getClassTuitionMethod(c) === 'monthly' ? 'Tính theo số buổi có mặt từng tháng' : 'Dự kiến thu (Buổi ' + nextTargetIndex + '): ' + nextDateText}</div></div></div><div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid #e2e8f0; padding-top:12px; margin-top:12px;"><span class="text-sm" style="font-weight:700;"><i class="fas fa-users text-blue"></i> ${stuCount} học sinh</span><div style="display:flex; gap:8px;"><button class="btn-outline-action text-green" onclick="openAddStudentForClass(${c.id})" title="Thêm học sinh"><i class="fas fa-user-plus"></i></button><button class="btn-outline-action text-orange" onclick="editClass(${c.id})" title="Sửa nhóm"><i class="fas fa-pen"></i></button><button class="btn-outline-action text-red" onclick="deleteClass(${c.id})" title="Xóa nhóm"><i class="fas fa-trash"></i></button></div></div></div>`;
     });
     populateClassSelects();
 }
 
 function deleteClass(id) { if(confirm("CẢNH BÁO ĐỎ: Xóa nhóm lớp sẽ XÓA VĨNH VIỄN toàn bộ dữ liệu của lớp này. Bạn chắc chắn chứ?")) { db.classes = db.classes.filter(c => c.id != id); saveData(); renderClasses(); showToast("Đã xóa nhóm lớp!"); } }
 function addTkbRow(day=2, start='18:00', end='20:00') { const div = document.createElement('div'); div.className = 'form-row tkb-row mb-15'; div.style.alignItems = 'center'; div.innerHTML = `<select class="tkb-day" style="flex: 1; padding: 12px 5px; text-align: center; min-width: 60px;"><option value="2">T2</option><option value="3">T3</option><option value="4">T4</option><option value="5">T5</option><option value="6">T6</option><option value="7">T7</option><option value="8">CN</option></select><input type="time" class="tkb-start" value="${start}" style="flex: 1.2; padding: 12px 5px; text-align: center;"><input type="time" class="tkb-end" value="${end}" style="flex: 1.2; padding: 12px 5px; text-align: center;"><button class="btn-outline-action text-red" style="flex-shrink: 0; width: 44px; height: 44px; padding: 0;" onclick="this.parentElement.remove()"><i class="fas fa-trash"></i></button>`; div.querySelector('.tkb-day').value = day; document.getElementById('tkb-container').appendChild(div); }
-function saveClass() { let id = document.getElementById('class-id').value; let name = document.getElementById('cl-name').value; let fee = document.getElementById('cl-fee').value; let cycle = document.getElementById('cl-cycle').value; let start = document.getElementById('cl-start').value; if(!name || !start) return showToast("Nhập đủ thông tin!", "error"); let tkb = []; document.querySelectorAll('.tkb-row').forEach(row => { tkb.push({ dayOfWeek: parseInt(row.querySelector('.tkb-day').value), start: row.querySelector('.tkb-start').value, end: row.querySelector('.tkb-end').value }); }); let obj = { id: id ? parseInt(id) : Date.now(), name, fee, cycle, startDate: start, tkb }; if(id) db.classes[db.classes.findIndex(c => c.id == id)] = obj; else db.classes.push(obj); saveData(); closeModal('modal-add-class'); renderClasses(); generateSchedules(); showToast("Đã lưu Nhóm!"); }
-function editClass(id) { let c = db.classes.find(x => x.id == id); if(!c) return; document.getElementById('class-id').value = c.id; document.getElementById('cl-name').value = c.name; document.getElementById('cl-fee').value = c.fee; document.getElementById('cl-cycle').value = c.cycle; document.getElementById('cl-start').value = c.startDate; document.getElementById('tkb-container').innerHTML = ''; c.tkb.forEach(t => addTkbRow(t.dayOfWeek, t.start, t.end)); openModal('modal-add-class'); }
+function saveClass() {
+    const id = document.getElementById('class-id').value;
+    const name = document.getElementById('cl-name').value;
+    const fee = document.getElementById('cl-fee').value;
+    const cycle = document.getElementById('cl-cycle').value;
+    const start = document.getElementById('cl-start').value;
+    const mode = document.getElementById('cl-tuition-mode').value === 'monthly' ? 'monthly' : 'sessions';
+    if (!name || !start) return showToast('Nhập đủ thông tin!', 'error');
+    const original = id ? db.classes.find(c => String(c.id) === String(id)) : null;
+    if (original && getClassTuitionMethod(original) !== mode) {
+        const alreadyStarted = db.sessions.some(s => String(s.classId) === String(id) && s.status === 'completed');
+        const alreadyPaid = db.tuitions.some(t => String(t.classId) === String(id));
+        if (alreadyStarted || alreadyPaid) {
+            return showToast('Nhóm đã có buổi hoàn thành hoặc giao dịch thu tiền. Không đổi cách thu để tránh thu trùng!', 'error');
+        }
+    }
+    const tkb = [];
+    document.querySelectorAll('.tkb-row').forEach(row => {
+        tkb.push({ dayOfWeek: parseInt(row.querySelector('.tkb-day').value),
+            start: row.querySelector('.tkb-start').value,
+            end: row.querySelector('.tkb-end').value });
+    });
+    const obj = { id: id ? parseInt(id) : Date.now(), name, fee, cycle, startDate: start, tkb, tuitionMode: mode };
+    if (id) {
+        const index = db.classes.findIndex(c => String(c.id) === String(id));
+        if (index < 0) return showToast('Không tìm thấy nhóm cần sửa!', 'error');
+        db.classes[index] = { ...db.classes[index], ...obj };
+    } else db.classes.push(obj);
+    saveData(); closeModal('modal-add-class'); renderClasses(); generateSchedules();
+    showToast('Đã lưu Nhóm!');
+}
+function editClass(id) { let c = db.classes.find(x => x.id == id); if(!c) return; document.getElementById('class-id').value = c.id; document.getElementById('cl-name').value = c.name; document.getElementById('cl-fee').value = c.fee; document.getElementById('cl-cycle').value = c.cycle; document.getElementById('cl-start').value = c.startDate; document.getElementById('cl-tuition-mode').value = getClassTuitionMethod(c); toggleClassTuitionMode(); document.getElementById('tkb-container').innerHTML = ''; c.tkb.forEach(t => addTkbRow(t.dayOfWeek, t.start, t.end)); openModal('modal-add-class'); }
 
 function populateClassSelects() {
     let html = '<option value="">-- Tất cả nhóm --</option>'; 
