@@ -58,110 +58,161 @@ if (btnLogin && auth && provider) {
 // - false: TẠM TẮT giới hạn 30 ngày. Tất cả tài khoản đăng nhập đều được
 //   sử dụng miễn phí hoàn toàn, không giới hạn thời gian, không bị khóa,
 //   không hiển thị màn hình thu phí hoặc cảnh báo số ngày còn lại.
-// - true: BẬT LẠI cơ chế dùng thử 30 ngày ban đầu (kiểm tra daysLeft, hiện
-//   cảnh báo khi còn <= 5 ngày, khóa ứng dụng khi hết hạn <= 0 ngày).
+// - true: Cảnh báo trước 3 ngày và hiển thị QR gia hạn; quá hạn vẫn
+//   cho tải sao lưu, chỉ Admin mới xác nhận gia hạn.
 // =========================================================================
-const ENABLE_TRIAL_LIMIT = false;
+const ENABLE_TRIAL_LIMIT = true;
 window.ENABLE_TRIAL_LIMIT = ENABLE_TRIAL_LIMIT;
+
+
+// Thời gian chuyển tiếp cho tài khoản đăng ký trước khi áp dụng chính sách.
+// Không chỉnh sửa trường ngày hết hạn đã lưu trên Firebase.
+const PAID_START_DATE = new Date('2026-11-03T00:00:00+07:00');
+const LEGACY_TRANSITION_DAYS = 30;
+const EXPIRY_WARNING_DAYS = 3;
+let billingAccountEmail = '';
+let billingAccountUid = '';
+let billingCloudDataReady = false;
+let billingAccountLocked = false;
+
+function calculateAccountAccess(record, now = new Date()) {
+    if (!ENABLE_TRIAL_LIMIT) return { permitted: true, daysLeft: null, transition: false };
+    const expiryValue = record && (record.ngay_het_han_thuong || record.ngay_het_han);
+    const expiry = expiryValue ? new Date(expiryValue) : null;
+    if (!expiry || !Number.isFinite(expiry.getTime())) {
+        // Không khóa dữ liệu nếu chưa có metadata hợp lệ.
+        return { permitted: true, daysLeft: null, transition: false };
+    }
+    let effective = expiry;
+    const registered = record && record.ngay_dang_ky ? new Date(record.ngay_dang_ky) : null;
+    const legacy = registered && Number.isFinite(registered.getTime())
+        ? registered < PAID_START_DATE : expiry < PAID_START_DATE;
+    if (legacy) {
+        const transitionEnd = new Date(PAID_START_DATE.getTime() +
+            LEGACY_TRANSITION_DAYS * 24 * 60 * 60 * 1000);
+        if (effective < transitionEnd) effective = transitionEnd;
+    }
+    const remaining = effective.getTime() - now.getTime();
+    return {
+        permitted: remaining > 0,
+        daysLeft: Math.max(0, Math.ceil(remaining / (24 * 60 * 60 * 1000))),
+        transition: Boolean(legacy && effective > expiry),
+        until: effective
+    };
+}
+
+function copyBillingAccountInfo() {
+    const message = 'Yêu cầu gia hạn Quản lý dạy thêm 99.000đ/năm\n' +
+        'Email tài khoản: ' + billingAccountEmail +
+        '\nMã tài khoản: ' + billingAccountUid +
+        '\nTôi đã chuyển khoản. Nhờ Admin xác nhận để gia hạn.';
+    if (!navigator.clipboard || !navigator.clipboard.writeText) {
+        showToast('Không sao chép tự động được. Hãy gửi email đăng nhập cho Admin.', 'error');
+        return;
+    }
+    navigator.clipboard.writeText(message)
+        .then(() => showToast('Đã sao chép thông tin. Hãy gửi qua Zalo cho Admin.'))
+        .catch(() => showToast('Không sao chép được. Hãy gửi email đăng nhập cho Admin.', 'error'));
+}
 
 let currentUser = null; 
 
 if (auth) {
 onAuthStateChanged(auth, async (user) => {
-    if (user) {
-        currentUser = user;
-        if (loginScreen) loginScreen.style.display = 'none';
-        console.log("Đã đăng nhập:", user.email);
-
-        const userRef = doc(firestoreDb, 'nguoi_dung', user.uid);
-        let hasAccess = true; 
-
-        // Khởi tạo trạng thái ẩn màn hình thu phí và banner cảnh báo
-        const manHinhThuPhi = document.getElementById('man-hinh-thu-phi');
-        const trialBanner = document.getElementById('trial-warning-banner');
-        if (manHinhThuPhi) manHinhThuPhi.style.display = 'none';
-        if (trialBanner) trialBanner.style.display = 'none';
-
-        try {
-            const docUserSnap = await getDoc(userRef);
-            const ngayHienTai = new Date();
-
-            // Nếu người dùng mới, vẫn lưu thông tin đăng ký và hạn 30 ngày vào Firestore để phục vụ khi bật lại
-            if (!docUserSnap.exists()) {
-                let ngayHetHan = new Date();
-                ngayHetHan.setDate(ngayHienTai.getDate() + 30);
-                await setDoc(userRef, { 
-                    email: user.email, 
-                    ngay_dang_ky: ngayHienTai.toISOString(), 
-                    ngay_het_han: ngayHetHan.toISOString() 
-                });
-            }
-
-            // ================= CƠ CHẾ KIỂM TRA DÙNG THỬ 30 NGÀY =================
-            // Khi ENABLE_TRIAL_LIMIT = true: Kích hoạt kiểm tra số ngày còn lại (daysLeft) và khóa app
-            // Khi ENABLE_TRIAL_LIMIT = false: Bỏ qua kiểm tra hết hạn, cấp quyền sử dụng miễn phí hoàn toàn
-            if (ENABLE_TRIAL_LIMIT) {
-                let duLieu = docUserSnap.exists() ? docUserSnap.data() : null;
-                if (!duLieu) {
-                    let newSnap = await getDoc(userRef);
-                    if (newSnap.exists()) duLieu = newSnap.data();
-                }
-
-                if (duLieu && duLieu.ngay_het_han) {
-                    const ngayHetHan = new Date(duLieu.ngay_het_han);
-                    const timeDiff = ngayHetHan.getTime() - ngayHienTai.getTime();
-                    const daysLeft = Math.ceil(timeDiff / (1000 * 3600 * 24));
-
-                    if (daysLeft <= 0) {
-                        hasAccess = false;
-                        if (manHinhThuPhi) manHinhThuPhi.style.display = 'block';
-                        let emailElements = document.getElementsByClassName('email-user');
-                        for (let i = 0; i < emailElements.length; i++) { 
-                            emailElements[i].innerText = user.email.split('@')[0]; 
-                        }
-                    } else {
-                        if (manHinhThuPhi) manHinhThuPhi.style.display = 'none';
-                        if (daysLeft <= 5) {
-                            if (trialBanner) {
-                                trialBanner.style.display = 'flex';
-                                const trialDaysEl = document.getElementById('trial-days-left');
-                                if (trialDaysEl) trialDaysEl.innerText = daysLeft;
-                                const upgradePrefix = document.getElementById('upgrade-email-prefix');
-                                if (upgradePrefix) upgradePrefix.innerText = user.email.split('@')[0];
-                            }
-                        }
-                    }
-                }
-            } else {
-                // TẠM TẮT GIỚI HẠN:
-                // - hasAccess luôn = true
-                // - Không khóa ứng dụng, không hiển thị màn hình thu phí
-                // - Không hiển thị banner cảnh báo số ngày còn lại
-                hasAccess = true;
-                if (manHinhThuPhi) manHinhThuPhi.style.display = 'none';
-                if (trialBanner) trialBanner.style.display = 'none';
-            }
-        } catch (error) { 
-            console.log("Lỗi kiểm tra bản quyền:", error);
-            // Khi tạm tắt giới hạn, luôn đảm bảo cấp quyền truy cập để người dùng không bị gián đoạn
-            if (!ENABLE_TRIAL_LIMIT) {
-                hasAccess = true;
-            }
-        }
-
-        if (hasAccess) {
-            const docRef = doc(firestoreDb, "DuLieuDayThem", user.uid);
-            const docSnap = await getDoc(docRef);
-            if (docSnap.exists()) { db = docSnap.data(); } 
-            else { await setDoc(docRef, db); }
-            if (typeof updateDashboard === 'function') updateDashboard();
-            if (typeof generateSchedules === 'function') generateSchedules();
-            if (typeof renderClasses === 'function') renderClasses();
-        }
-
-    } else {
+    if (!user) {
         currentUser = null;
+        billingAccountEmail = '';
+        billingAccountUid = '';
+        billingCloudDataReady = false;
+        billingAccountLocked = false;
         if (loginScreen) loginScreen.style.display = 'flex';
+        return;
+    }
+
+    currentUser = user;
+    billingAccountEmail = user.email || '';
+    billingAccountUid = user.uid || '';
+    billingCloudDataReady = false;
+    billingAccountLocked = false;
+    if (loginScreen) loginScreen.style.display = 'none';
+
+    const banner = document.getElementById('trial-warning-banner');
+    const expired = document.getElementById('man-hinh-thu-phi');
+    if (banner) banner.style.display = 'none';
+    if (expired) expired.style.display = 'none';
+
+    // Nội dung chuyển khoản để Admin đối chiếu, không tự gia hạn sau khi bấm nút.
+    document.querySelectorAll('.email-user').forEach(el => {
+        el.textContent = (user.email || '').split('@')[0];
+    });
+    const prefix = document.getElementById('upgrade-email-prefix');
+    if (prefix) prefix.textContent = (user.email || '').split('@')[0];
+    const accountText = document.getElementById('billing-account-identity');
+    if (accountText) accountText.textContent = user.email || 'Tài khoản không có email';
+
+    let access = { permitted: true, daysLeft: null, transition: false };
+    let accessCheckFailed = false;
+    try {
+        const userRef = doc(firestoreDb, 'nguoi_dung', user.uid);
+        let snap = await getDoc(userRef);
+        if (!snap.exists()) {
+            const now = new Date();
+            const expiration = new Date(now);
+            expiration.setDate(expiration.getDate() + 30);
+            await setDoc(userRef, {
+                email: user.email || '',
+                ngay_dang_ky: now.toISOString(),
+                ngay_het_han: expiration.toISOString()
+            });
+            snap = await getDoc(userRef);
+        }
+        access = calculateAccountAccess(snap.exists() ? snap.data() : null);
+    } catch (error) {
+        accessCheckFailed = true;
+        console.warn('Không đọc được thời hạn sử dụng:', error);
+        showToast('Không thể kiểm tra thời hạn. Vui lòng kiểm tra Internet.', 'error');
+    }
+
+    // Đọc dữ liệu trước khi quyết định hiển thị màn hình hết hạn:
+    // sau khi quá hạn vẫn có thể xuất bản sao lưu từ dữ liệu tài khoản.
+    try {
+        const dataRef = doc(firestoreDb, 'DuLieuDayThem', user.uid);
+        const cloud = await getDoc(dataRef);
+        if (cloud.exists()) {
+            db = Object.assign({}, defaultData, cloud.data());
+            billingCloudDataReady = true;
+        } else if (access.permitted) {
+            await setDoc(dataRef, db);
+            billingCloudDataReady = true;
+        }
+        if (billingCloudDataReady) {
+            localStorage.setItem('tutoringData', JSON.stringify(db));
+        }
+    } catch (error) {
+        console.warn('Không tải được dữ liệu lớp từ Cloud:', error);
+        showToast('Không đồng bộ được Cloud. Bản sao lưu có thể chỉ chứa dữ liệu lưu trên máy.', 'error');
+    }
+
+    const hasAccess = !ENABLE_TRIAL_LIMIT || access.permitted || accessCheckFailed;
+    billingAccountLocked = !hasAccess;
+
+    if (hasAccess) {
+        if (access.daysLeft !== null && access.daysLeft <= EXPIRY_WARNING_DAYS &&
+            !accessCheckFailed && banner) {
+            banner.style.display = 'flex';
+            const days = document.getElementById('trial-days-left');
+            if (days) days.textContent = String(access.daysLeft);
+        }
+        if (typeof updateDashboard === 'function') updateDashboard();
+        if (typeof generateSchedules === 'function') generateSchedules();
+        if (typeof renderClasses === 'function') renderClasses();
+    } else {
+        // Không xóa hoặc thay đổi Firestore khi đã hết hạn.
+        if (expired) expired.style.display = 'block';
+        const hint = document.getElementById('expired-backup-status');
+        if (hint) hint.textContent = billingCloudDataReady
+            ? 'Đã tải dữ liệu từ Cloud. Bạn có thể tải bản sao lưu ngay.'
+            : 'Không tải được Cloud. Sao lưu trên máy có thể chưa đủ dữ liệu; vui lòng thử lại khi có mạng.';
     }
 });
 }
@@ -212,7 +263,8 @@ function parseDateVi(dStr) {
 }
 
 window.onload = () => { 
-    generateSchedules(); updateDashboard(); renderClasses(); populateClassSelects(); 
+    if (!auth && !billingAccountLocked) generateSchedules();
+    updateDashboard(); renderClasses(); populateClassSelects(); 
     if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').catch(err => console.log('SW registration failed:', err)); }
 };
 
@@ -2338,6 +2390,7 @@ window.openAddStudentForClass = openAddStudentForClass;
 window.renderStatistics = renderStatistics;
 window.exportTuitionExcel = exportTuitionExcel;
 window.logoutApp = logoutApp;
+window.copyBillingAccountInfo = copyBillingAccountInfo;
 
 // ================= HỆ THỐNG THÔNG BÁO CẬP NHẬT TỰ ĐỘNG =================
 const APP_LATEST_VERSION = "1.1"; 
