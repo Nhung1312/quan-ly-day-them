@@ -245,7 +245,10 @@ async function saveData() {
         try {
             const docRef = doc(firestoreDb, "DuLieuDayThem", currentUser.uid);
             await setDoc(docRef, db);
-        } catch (e) { console.error("Lỗi khi đồng bộ lên mây: ", e); }
+        } catch (e) {
+            console.error("Lỗi khi đồng bộ lên mây: ", e);
+            showToast('Không đồng bộ được Firebase. Dữ liệu mới chỉ lưu trên máy; hãy sao lưu JSON và kiểm tra mạng/bản quyền.', 'error');
+        }
     }
 }
 
