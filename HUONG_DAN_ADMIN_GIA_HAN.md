@@ -12,13 +12,13 @@
 2. Quét QR cũ, kiểm tra **đúng số tiền 99.000đ** và thông tin người nhận trước khi xác nhận ngân hàng.
 3. Bấm **Sao chép thông tin gia hạn** và gửi Admin qua Zalo 0775172026 kèm bằng chứng giao dịch; Admin đối chiếu tiền thực nhận, người chuyển và nội dung.
 4. Admin mở **Firebase Console → Firestore Database → Data → nguoi_dung → {UID}** đúng tài khoản được yêu cầu.
-5. Chỉnh trường `ngay_het_han` thành một chuỗi ISO 8601 hợp lệ, ví dụ `2027-12-03T00:00:00.000+07:00`. Chỉ gia hạn sau khi xác minh thanh toán. Chính sách đề xuất: tính thêm 1 năm từ ngày hết hạn hiện tại nếu còn hạn, hoặc từ ngày xác nhận thanh toán nếu đã hết hạn.
+5. **Tạo/cập nhật trường riêng `ngay_het_han_thuong`** (kiểu string ISO 8601), ví dụ `2027-12-03T00:00:00.000+07:00`. Không chỉnh trường chung `ngay_het_han`: app Trung tâm PRO có thể dùng chung tài khoản Firebase. Chỉ gia hạn sau khi xác minh thanh toán. Chính sách đề xuất: cộng 1 năm từ ngày hết hạn hiệu lực hiện tại nếu còn hạn, hoặc từ ngày xác nhận thanh toán nếu đã hết hạn.
 6. Hướng dẫn giáo viên bấm **Đã được gia hạn? Kiểm tra lại** để tải trạng thái mới.
 
-**Không sửa các trường** `ngay_dang_ky` hay dữ liệu lớp trong `DuLieuDayThem/{UID}`. Việc cập nhật thời hạn phải được giới hạn chỉ Admin bằng Firestore Security Rules/backend tin cậy. Nếu người dùng thường có thể tự sửa `ngay_het_han` thì chức năng thu phí không an toàn.
+**Không sửa các trường** `ngay_dang_ky`, `ngay_het_han` hay dữ liệu lớp trong `DuLieuDayThem/{UID}`. Việc cập nhật thời hạn phải được giới hạn chỉ Admin bằng Firestore Security Rules/backend tin cậy. Nếu người dùng thường có thể tự sửa `ngay_het_han_thuong` hoặc `ngay_het_han` thì chức năng thu phí không an toàn.
 
 ## Thời gian và sao lưu
-- Tài khoản tạo mới có hạn dùng thử 30 ngày kể từ khi tạo hồ sơ `nguoi_dung`.
+- Tài khoản tạo mới có hạn dùng thử 30 ngày kể từ khi tạo hồ sơ `nguoi_dung`. Khi chưa có `ngay_het_han_thuong`, app bản thường dùng mốc cũ `ngay_het_han` để tương thích; khi Admin gia hạn sẽ ưu tiên mốc riêng.
 - Tài khoản cũ có thời gian chuyển tiếp đến **00:00 ngày 03/12/2026 (GMT+7)** nếu ngày hết hạn cũ sớm hơn mốc đó. Nếu đã được gia hạn xa hơn, giữ ngày cũ.
 - Khi còn từ 3 ngày trở xuống, màn hình Tổng quan hiển thị nút **Sao lưu dữ liệu** và **Gia hạn**.
 - Sau khi hết hạn, app vẫn tải dữ liệu từ Firestore (nếu kết nối/quyền cho phép) và hiển thị nút **TẢI BẢN SAO LƯU JSON**. Không được xóa dữ liệu khi hết hạn.
