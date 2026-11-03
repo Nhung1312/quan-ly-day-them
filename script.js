@@ -1284,7 +1284,8 @@ function setTuitionTab(tab, el) {
 
 function renderTuition() {
     let expected = 0, collected = 0; 
-    db.tuitions.forEach(t => collected += t.amount);
+    // Chỉ số của tab mốc buổi; học phí tháng theo dõi ở tab Theo tháng.
+    db.tuitions.filter(t => t.billingMode !== 'monthly').forEach(t => collected += t.amount);
     
     // Tổng dự thu tính trên toàn bộ buổi học sinh đã có mặt chưa đóng tiền (kể cả hs đã nghỉ nếu còn nợ)
     db.students.forEach(stu => {
