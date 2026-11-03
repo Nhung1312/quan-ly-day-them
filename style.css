@@ -333,3 +333,114 @@ input:focus, select:focus { border-color: var(--primary); background: white; box
 .monthly-payment-record { display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:0.76rem; color:#334155; padding:4px 0; }
 .monthly-payment-record button { border:1px solid #fecaca; background:#fff1f2; color:#991b1b; border-radius:8px; padding:7px 11px; min-height:36px; font-weight:800; cursor:pointer; }
 @media(max-width:370px){.monthly-filter-row{grid-template-columns:1fr;}.monthly-pay-btn{padding:8px;}}
+
+
+/* Thông báo sao lưu trước khi áp dụng bảo vệ tài khoản giai đoạn 2 */
+.backup-prep-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 18px;
+    border-radius: 16px;
+    border: 1px solid #f59e0b;
+    background: #fffbeb;
+    color: #78350f;
+    margin-bottom: 20px;
+    box-shadow: 0 6px 20px rgba(146, 64, 14, .08);
+}
+.backup-prep-banner-icon, .backup-prep-dialog-icon {
+    width: 48px;
+    height: 48px;
+    flex: 0 0 48px;
+    display: grid;
+    place-items: center;
+    border-radius: 14px;
+    background: #fef3c7;
+    color: #92400e;
+    font-size: 1.45rem;
+}
+.backup-prep-banner-content { flex: 1; min-width: 0; }
+.backup-prep-banner h3 {
+    font-size: 1.05rem;
+    font-weight: 800;
+    line-height: 1.4;
+    margin: 0 0 8px;
+    color: #78350f;
+}
+.backup-prep-banner p, .backup-prep-dialog p {
+    line-height: 1.65;
+    font-size: .86rem;
+    margin: 0 0 10px;
+}
+.backup-prep-sync-status {
+    font-size: .8rem;
+    font-weight: 700;
+    color: #92400e;
+    line-height: 1.5;
+}
+.backup-prep-actions, .backup-prep-dialog-actions { display: flex; flex-wrap: wrap; gap: 9px; }
+.backup-prep-primary, .backup-prep-secondary, .backup-prep-later {
+    border-radius: 10px;
+    padding: 11px 14px;
+    min-height: 48px;
+    font-size: .85rem;
+    line-height: 1.35;
+    font-weight: 800;
+    cursor: pointer;
+}
+.backup-prep-primary { background: #92400e; color: #fff; border: 1px solid #92400e; }
+.backup-prep-primary:hover { background: #78350f; }
+.backup-prep-secondary { background: #fff; color: #78350f; border: 1px solid #b45309; }
+.backup-prep-secondary:disabled { opacity: .5; cursor: not-allowed; }
+.backup-prep-later { background: transparent; border: 1px solid #d1d5db; color: #374151; }
+.backup-prep-primary:focus-visible, .backup-prep-secondary:focus-visible, .backup-prep-later:focus-visible,
+.backup-prep-close:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+.backup-prep-overlay {
+    position: fixed;
+    z-index: 9500;
+    inset: 0;
+    padding: 18px;
+    background: rgba(15, 23, 42, .66);
+    align-items: center;
+    justify-content: center;
+    overflow-y: auto;
+}
+.backup-prep-dialog {
+    position: relative;
+    width: 100%;
+    max-width: 490px;
+    padding: 25px;
+    border-radius: 20px;
+    background: #fff;
+    color: #334155;
+    box-shadow: 0 22px 60px rgba(0,0,0,.22);
+}
+.backup-prep-dialog-icon { margin: 0 0 14px; }
+.backup-prep-dialog h2 {
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: #0f172a;
+    line-height: 1.35;
+    margin: 0 35px 12px 0;
+}
+.backup-prep-dialog-actions { flex-direction: column; margin-top: 16px; }
+.backup-prep-dialog-actions button { width: 100%; }
+.backup-prep-close {
+    position: absolute;
+    top: 12px;
+    right: 13px;
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    color: #334155;
+    border-radius: 10px;
+    width: 44px;
+    height: 44px;
+    cursor: pointer;
+}
+@media (max-width: 520px) {
+    .backup-prep-banner { gap: 10px; padding: 13px; }
+    .backup-prep-banner-icon { width: 37px; height: 37px; flex-basis: 37px; font-size: 1.1rem; }
+    .backup-prep-actions { flex-direction: column; }
+    .backup-prep-actions button { width: 100%; }
+    .backup-prep-dialog { padding: 22px 17px; }
+}
