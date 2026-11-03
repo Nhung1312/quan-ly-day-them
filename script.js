@@ -256,10 +256,171 @@ function showLoading(show, text="Đang xử lý...") { document.getElementById('
 function switchCalTab(tabId, el) {
     document.querySelectorAll('#view-calendar .tab-btn').forEach(btn => btn.classList.remove('active')); el.classList.add('active');
     document.querySelectorAll('.cal-tab').forEach(tab => tab.classList.add('hidden')); document.getElementById(`tab-${tabId}`).classList.remove('hidden');
+    if(tabId === 'week') renderWeekCalendar();
     if(tabId === 'holiday') renderHolidays();
     if(tabId === 'study') renderUpcomingClasses();
     if(tabId === 'makeup') renderMakeups();
     if(tabId === 'month') renderMonthClasses();
+}
+
+
+// ================= LỊCH DẠY & THU NHẬP THEO TUẦN =================
+// Báo cáo chỉ đọc dữ liệu hiện có, không làm thay đổi schema Firestore/localStorage.
+function getWeekStartLocal(date) {
+    const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); // Thứ Hai
+    return d;
+}
+
+function weekLocalDateKey(date) {
+    return date.getFullYear() + '-' +
+        String(date.getMonth() + 1).padStart(2, '0') + '-' +
+        String(date.getDate()).padStart(2, '0');
+}
+
+function weekLocalDisplayDate(date) {
+    return String(date.getDate()).padStart(2, '0') + '/' +
+        String(date.getMonth() + 1).padStart(2, '0') + '/' +
+        date.getFullYear();
+}
+
+function escapeWeekHtml(value) {
+    const entity = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+    return String(value == null ? '' : value).replace(/[&<>"']/g, ch => entity[ch]);
+}
+
+let weekCalendarAnchor = getWeekStartLocal(new Date());
+
+function changeWeekCalendar(offset) {
+    if (!Number.isInteger(offset) || Math.abs(offset) !== 1) return;
+    weekCalendarAnchor.setDate(weekCalendarAnchor.getDate() + offset * 7);
+    renderWeekCalendar();
+}
+
+function resetWeekCalendar() {
+    weekCalendarAnchor = getWeekStartLocal(new Date());
+    renderWeekCalendar();
+}
+
+function openWeeklyAttendance(sessionId) {
+    const session = db.sessions.find(s => String(s.id) === String(sessionId));
+    if (!session || session.status === 'canceled') return;
+    const cls = db.classes.find(c => String(c.id) === String(session.classId));
+    openAttendance(String(session.id), cls ? cls.name : 'Lớp đã xóa');
+}
+
+function renderWeekCalendar() {
+    const list = document.getElementById('week-calendar-list');
+    if (!list) return;
+
+    const first = getWeekStartLocal(weekCalendarAnchor);
+    const last = new Date(first.getFullYear(), first.getMonth(), first.getDate() + 6);
+    const start = weekLocalDateKey(first);
+    const end = weekLocalDateKey(last);
+    const allSessions = (db.sessions || [])
+        .filter(s => s.date >= start && s.date <= end)
+        .sort((a, b) => (a.date || '').localeCompare(b.date || '') ||
+            String(a.start || '').localeCompare(String(b.start || '')));
+
+    const completed = allSessions.filter(s => s.status === 'completed');
+    const scheduled = allSessions.filter(s => s.status !== 'canceled');
+    const classById = new Map((db.classes || []).map(c => [String(c.id), c]));
+    const studentById = new Map((db.students || []).map(s => [String(s.id), s]));
+    const attendanceBySession = new Map();
+    (db.attendance || []).forEach(a => {
+        const key = String(a.sessionId);
+        if (!attendanceBySession.has(key)) attendanceBySession.set(key, []);
+        attendanceBySession.get(key).push(a);
+    });
+
+    // Ước tính theo các học sinh có mặt trong buổi đã hoàn thành.
+    // Không coi đây là giao dịch đã thu hoặc tiền lương ròng.
+    let earned = 0;
+    completed.forEach(s => {
+        const cls = classById.get(String(s.classId));
+        if (!cls) return;
+        const counted = new Set();
+        (attendanceBySession.get(String(s.id)) || []).forEach(a => {
+            if (a.status !== 'có mặt') return;
+            const studentKey = String(a.studentId);
+            if (counted.has(studentKey)) return;
+            counted.add(studentKey);
+            const stu = studentById.get(studentKey);
+            if (!stu) return;
+            const customFee = Number(stu.customFee);
+            earned += Number.isFinite(customFee) && customFee > 0
+                ? customFee : (Number(cls.fee) || 0);
+        });
+    });
+
+    // Thu học phí theo ngày thực tế ghi nhận; có thể khác kỳ học đang xem.
+    const collected = (db.tuitions || [])
+        .filter(t => t.date >= start && t.date <= end)
+        .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
+    const money = amount => Math.round(amount).toLocaleString('vi-VN') + 'đ';
+    document.getElementById('week-range').textContent =
+        weekLocalDisplayDate(first) + ' – ' + weekLocalDisplayDate(last);
+    document.getElementById('week-completed').textContent = completed.length + ' buổi';
+    document.getElementById('week-scheduled').textContent = scheduled.length + ' buổi';
+    document.getElementById('week-earned').textContent = money(earned);
+    document.getElementById('week-collected').textContent = money(collected);
+
+    const weekdays = ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy', 'Chủ nhật'];
+    const today = weekLocalDateKey(new Date());
+    let html = '';
+
+    for (let i = 0; i < 7; i++) {
+        const date = new Date(first.getFullYear(), first.getMonth(), first.getDate() + i);
+        const dateKey = weekLocalDateKey(date);
+        const sessions = allSessions.filter(s => s.date === dateKey);
+        html += '<section class="week-day" aria-label="' + weekdays[i] + '">' +
+            '<div class="week-day-title"><span>' + weekdays[i] + ' • ' +
+            weekLocalDisplayDate(date).slice(0, 5) + '</span><small>' +
+            sessions.length + ' ca</small></div>';
+
+        if (!sessions.length) {
+            html += '<p class="week-day-empty">Không có lịch dạy</p>';
+        }
+        sessions.forEach(s => {
+            const cls = classById.get(String(s.classId));
+            const className = cls ? cls.name : 'Lớp đã xóa';
+            const isCompleted = s.status === 'completed';
+            const isCanceled = s.status === 'canceled';
+            const records = attendanceBySession.get(String(s.id)) || [];
+            const present = records.filter(a => a.status === 'có mặt').length;
+            const excused = records.filter(a => a.status === 'phép').length;
+            const absent = records.filter(a => a.status === 'vắng').length;
+            const status = isCompleted ? 'Đã dạy' : (isCanceled ? 'Nghỉ' :
+                (dateKey < today ? 'Chưa điểm danh' : 'Sắp tới'));
+            const cssStatus = isCompleted ? 'done' : (isCanceled ? 'off' : 'todo');
+            const attendanceInfo = isCompleted ?
+                'Có mặt ' + present + ' · Phép ' + excused + ' · Vắng ' + absent :
+                (s.isMakeup ? 'Buổi dạy bù' : 'Buổi theo thời khóa biểu');
+            html += '<div class="week-session"><div class="week-session-main"><strong>' +
+                escapeWeekHtml(className) + '</strong><p>' +
+                escapeWeekHtml((s.start || '--:--') + ' – ' + (s.end || '--:--')) +
+                (s.isMakeup ? ' · Dạy bù' : '') + '</p><p>' +
+                escapeWeekHtml(attendanceInfo) + '</p><span class="week-session-status ' +
+                cssStatus + '">' + status + '</span></div>' +
+                (isCanceled ? '' :
+                    '<button type="button" class="week-attendance-btn" data-week-session-id="' +
+                    escapeWeekHtml(s.id) + '">' +
+                    (isCompleted ? 'Sửa điểm danh' : 'Điểm danh') + '</button>') +
+                '</div>';
+        });
+        html += '</section>';
+    }
+    list.innerHTML = html;
+    if (!list.dataset.weekHandlerReady) {
+        list.addEventListener('click', event => {
+            const button = event.target.closest('button[data-week-session-id]');
+            if (button && list.contains(button)) {
+                openWeeklyAttendance(button.dataset.weekSessionId);
+            }
+        });
+        list.dataset.weekHandlerReady = '1';
+    }
 }
 
 function renderUpcomingClasses() {
@@ -487,7 +648,8 @@ function submitAttendance() {
         let stus = db.students.filter(s => s.classId == session.classId && s.status !== 'inactive');
         stus.forEach(stu => { let exist = db.attendance.find(a => String(a.sessionId) === currentAttSessionId && a.studentId == stu.id); if(!exist) db.attendance.push({ sessionId: currentAttSessionId, studentId: stu.id, status: 'có mặt' }); });
         
-        session.status = 'completed'; saveData(); 
+        session.status = 'completed'; saveData();
+        if (document.getElementById('tab-week') && !document.getElementById('tab-week').classList.contains('hidden')) renderWeekCalendar(); 
         if(document.getElementById('view-classes').classList.contains('active')) renderClasses();
         closeModal('modal-attendance'); showToast("Đã lưu điểm danh!");
     } catch(err) { showToast("Lỗi: " + err.message, "error"); }
@@ -1797,6 +1959,8 @@ function renderStatistics() {
 // ================= GẮN HÀM VÀO WINDOW ĐỂ BỌT LỖI REFERENCE =================
 window.switchView = switchView;
 window.switchCalTab = switchCalTab;
+window.changeWeekCalendar = changeWeekCalendar;
+window.resetWeekCalendar = resetWeekCalendar;
 window.openModal = openModal;
 window.closeModal = closeModal;
 window.saveData = saveData;

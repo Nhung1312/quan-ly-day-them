@@ -86,14 +86,49 @@
             <section id="view-calendar" class="view">
                 <div class="top-bar"><div class="top-bar-title"><h2>📅 Lịch</h2></div></div>
                 <div class="tab-container mb-15">
+                    <div class="tab-btn active" onclick="switchCalTab('week', this)">Theo tuần</div>
                     <div class="tab-btn" onclick="switchCalTab('study', this)">Lịch học</div>
-                    <div class="tab-btn active" onclick="switchCalTab('holiday', this)">Lịch nghỉ</div>
+                    <div class="tab-btn" onclick="switchCalTab('holiday', this)">Lịch nghỉ</div>
                     <div class="tab-btn" onclick="switchCalTab('makeup', this)">Dạy bù</div>
                     <div class="tab-btn" onclick="switchCalTab('month', this)">Tháng</div>
                 </div>
                 
+
+                <div id="tab-week" class="cal-tab">
+                    <div class="week-picker">
+                        <div>
+                            <div class="week-picker-caption">LỊCH DẠY VÀ ĐIỂM DANH</div>
+                            <h3 id="week-range" aria-live="polite">Tuần hiện tại</h3>
+                        </div>
+                        <button type="button" class="week-current-btn" onclick="resetWeekCalendar()">Tuần này</button>
+                    </div>
+                    <div class="week-nav" aria-label="Chọn tuần">
+                        <button type="button" onclick="changeWeekCalendar(-1)" aria-label="Xem tuần trước"><i class="fas fa-chevron-left"></i> Tuần trước</button>
+                        <button type="button" onclick="changeWeekCalendar(1)" aria-label="Xem tuần sau">Tuần sau <i class="fas fa-chevron-right"></i></button>
+                    </div>
+                    <div class="week-summary" aria-live="polite">
+                        <div class="week-summary-card">
+                            <span>Đã dạy</span>
+                            <strong id="week-completed">0 buổi</strong>
+                        </div>
+                        <div class="week-summary-card">
+                            <span>Tổng lịch (không tính nghỉ)</span>
+                            <strong id="week-scheduled">0 buổi</strong>
+                        </div>
+                        <div class="week-summary-card">
+                            <span>Thu nhập ước tính</span>
+                            <strong id="week-earned">0đ</strong>
+                        </div>
+                        <div class="week-summary-card">
+                            <span>Học phí thực thu</span>
+                            <strong id="week-collected">0đ</strong>
+                        </div>
+                    </div>
+                    <p class="week-explainer">Ước tính = số học sinh có mặt ở các buổi đã hoàn thành × học phí/buổi hiện tại. Thực thu = các khoản đã ghi nhận thu tiền trong tuần (có thể là tiền của kỳ khác). Hai số này không cộng lại.</p>
+                    <div id="week-calendar-list" class="week-calendar-list"></div>
+                </div>
                 <div id="tab-study" class="cal-tab hidden"><div class="section-title mt-15"><h3>Lịch học sắp tới</h3></div><div id="upcoming-list" class="list-container"></div></div>
-                <div id="tab-holiday" class="cal-tab"><div class="section-title mt-15"><h3>Danh sách ngày nghỉ</h3><button class="btn-sm bg-blue text-white" style="border:none;" onclick="openAddHoliday()"><i class="fas fa-plus"></i> Thêm</button></div><div class="alert-item yellow mb-15"><div class="alert-info">Ngày nghỉ sẽ tự động loại bỏ lịch học và lùi số buổi.</div></div><div id="holiday-list" class="list-container"></div></div>
+                <div id="tab-holiday" class="cal-tab hidden"><div class="section-title mt-15"><h3>Danh sách ngày nghỉ</h3><button class="btn-sm bg-blue text-white" style="border:none;" onclick="openAddHoliday()"><i class="fas fa-plus"></i> Thêm</button></div><div class="alert-item yellow mb-15"><div class="alert-info">Ngày nghỉ sẽ tự động loại bỏ lịch học và lùi số buổi.</div></div><div id="holiday-list" class="list-container"></div></div>
                 <div id="tab-makeup" class="cal-tab hidden"><div class="section-title mt-15"><h3>Lịch dạy bù</h3><button class="btn-sm bg-blue text-white" style="border:none;" onclick="openModal('modal-add-makeup')"><i class="fas fa-plus"></i> Thêm</button></div><div id="makeup-list" class="list-container"></div></div>
                 <div id="tab-month" class="cal-tab hidden"><div class="section-title mt-15"><h3>Lịch tháng này (Bấm vào ca học để sửa Điểm danh)</h3></div><div id="month-list" class="list-container"></div></div>
             </section>
