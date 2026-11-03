@@ -57,6 +57,19 @@
                     </div>
                 </div>
 
+                <section id="backup-prep-banner" class="backup-prep-banner" aria-label="Nhắc sao lưu dữ liệu" style="display:none;">
+                    <div class="backup-prep-banner-icon" aria-hidden="true"><i class="fas fa-cloud-download-alt"></i></div>
+                    <div class="backup-prep-banner-content">
+                        <h3>Quan trọng: Hãy sao lưu dữ liệu lớp học</h3>
+                        <p>Hệ thống chuẩn bị nâng cấp bảo vệ tài khoản. Thầy cô nên tải file JSON để lưu lại lớp học, học sinh, lịch dạy, điểm danh và học phí. Đây là bản dự phòng, <strong>không xóa dữ liệu hiện tại.</strong></p>
+                        <p id="backup-prep-sync-status" class="backup-prep-sync-status" aria-live="polite"></p>
+                        <div class="backup-prep-actions">
+                            <button type="button" class="backup-prep-primary" onclick="startPreUpdateBackup()"><i class="fas fa-download"></i> Tải bản sao lưu JSON</button>
+                            <button type="button" id="backup-prep-confirm" class="backup-prep-secondary" disabled onclick="confirmPreUpdateBackup()"><i class="fas fa-check"></i> Tôi đã lưu file</button>
+                        </div>
+                    </div>
+                </section>
+
                 <div class="summary-grid">
                     <div class="summary-card bg-blue"><i class="fas fa-layer-group"></i><div><h4 id="dash-total-classes">0</h4><p>Nhóm lớp</p></div></div>
                     <div class="summary-card bg-green"><i class="fas fa-user-graduate"></i><div><h4 id="dash-total-students">0</h4><p>Học sinh</p></div></div>
@@ -774,6 +787,22 @@
             <button onclick="closeUpdateNotice()" style="background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; display: block; width: 100%; font-size: 16px; font-weight: bold;">
                 Đã hiểu
             </button>
+        </div>
+    </div>
+
+    <!-- Thông báo sao lưu trước đợt nâng cấp bảo vệ bản quyền. Không tự xóa dữ liệu. -->
+    <div id="backup-prep-modal" class="backup-prep-overlay" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="backup-prep-title" aria-describedby="backup-prep-description">
+        <div class="backup-prep-dialog">
+            <button type="button" class="backup-prep-close" onclick="dismissPreUpdateBackup()" aria-label="Để sau" title="Để sau"><i class="fas fa-times"></i></button>
+            <div class="backup-prep-dialog-icon" aria-hidden="true"><i class="fas fa-file-download"></i></div>
+            <h2 id="backup-prep-title">Hãy lưu một bản sao dữ liệu của bạn</h2>
+            <p id="backup-prep-description">Trước khi cập nhật bảo vệ tài khoản, hãy tải file JSON chứa lớp học, học sinh, lịch dạy, điểm danh và học phí. <strong>Thao tác tải không xóa hoặc thay đổi dữ liệu.</strong></p>
+            <p id="backup-prep-modal-status" class="backup-prep-sync-status" aria-live="polite"></p>
+            <div class="backup-prep-dialog-actions">
+                <button type="button" class="backup-prep-primary" onclick="startPreUpdateBackup()"><i class="fas fa-download"></i> TẢI SAO LƯU JSON</button>
+                <button type="button" id="backup-prep-modal-confirm" class="backup-prep-secondary" disabled onclick="confirmPreUpdateBackup()">Tôi đã kiểm tra file đã lưu</button>
+                <button type="button" class="backup-prep-later" onclick="dismissPreUpdateBackup()">Để sau (vẫn hiện nhắc trên trang chủ)</button>
+            </div>
         </div>
     </div>
 

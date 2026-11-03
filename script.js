@@ -118,6 +118,104 @@ function copyBillingAccountInfo() {
         .catch(() => showToast('Không sao chép được. Hãy gửi email đăng nhập cho Admin.', 'error'));
 }
 
+
+// ================= NHẮC SAO LƯU TRƯỚC KHI NÂNG CẤP RULES =================
+// Mỗi trình duyệt/tài khoản chỉ ngừng nhắc sau khi người dùng xác nhận
+// đã nhìn thấy file JSON được lưu. Không đụng dữ liệu lớp hoặc Firebase.
+const PRE_UPDATE_BACKUP_NOTICE_VERSION = 'truoc-rules-giai-doan-2-v1';
+let preUpdateBackupModalShownFor = '';
+let preUpdateBackupRequestedFor = '';
+
+function preUpdateBackupStorageKey() {
+    return currentUser ? 'qldt-backup-notice:' + PRE_UPDATE_BACKUP_NOTICE_VERSION +
+        ':' + currentUser.uid : '';
+}
+function hasConfirmedPreUpdateBackup() {
+    if (!currentUser) return false;
+    try { return localStorage.getItem(preUpdateBackupStorageKey()) === 'confirmed'; }
+    catch (error) { return false; }
+}
+function hidePreUpdateBackupReminder() {
+    const banner = document.getElementById('backup-prep-banner');
+    const modal = document.getElementById('backup-prep-modal');
+    if (banner) banner.style.display = 'none';
+    if (modal) modal.style.display = 'none';
+}
+function updatePreUpdateBackupControls() {
+    const enabled = Boolean(currentUser && billingCloudDataReady &&
+        preUpdateBackupRequestedFor === currentUser.uid);
+    for (const id of ['backup-prep-confirm', 'backup-prep-modal-confirm']) {
+        const button = document.getElementById(id);
+        if (button) button.disabled = !enabled;
+    }
+}
+function showPreUpdateBackupReminder() {
+    const banner = document.getElementById('backup-prep-banner');
+    const modal = document.getElementById('backup-prep-modal');
+    if (!banner) return;
+    if (!currentUser || billingAccountLocked || hasConfirmedPreUpdateBackup()) {
+        hidePreUpdateBackupReminder();
+        return;
+    }
+
+    banner.style.display = 'flex';
+    const cloudMessage = billingCloudDataReady
+        ? 'Dữ liệu đã được đọc từ Firebase. Hãy tải JSON và kiểm tra thư mục Tải xuống.'
+        : 'Chưa xác minh được dữ liệu Firebase. Bạn có thể tải dữ liệu trên máy, nhưng chưa thể xác nhận sao lưu đầy đủ.';
+    const downloaded = preUpdateBackupRequestedFor === currentUser.uid;
+    const message = downloaded
+        ? (billingCloudDataReady
+            ? 'Đã yêu cầu tải file JSON. Hãy kiểm tra thư mục Tải xuống rồi chọn “Tôi đã lưu file”.'
+            : 'Đã yêu cầu tải bản trên máy. Hãy kết nối lại Firebase để tải đủ dữ liệu trước khi xác nhận.')
+        : cloudMessage;
+    for (const id of ['backup-prep-sync-status', 'backup-prep-modal-status']) {
+        const status = document.getElementById(id);
+        if (status) status.textContent = message;
+    }
+    updatePreUpdateBackupControls();
+    if (modal && preUpdateBackupModalShownFor !== currentUser.uid) {
+        preUpdateBackupModalShownFor = currentUser.uid;
+        modal.style.display = 'flex';
+    }
+}
+function dismissPreUpdateBackup() {
+    const modal = document.getElementById('backup-prep-modal');
+    if (modal) modal.style.display = 'none';
+    // Banner trên Tổng quan luôn còn cho đến khi xác nhận sao lưu.
+}
+function startPreUpdateBackup() {
+    if (!currentUser) {
+        showToast('Vui lòng đăng nhập Google trước khi sao lưu tài khoản.', 'error');
+        return;
+    }
+    try {
+        backupData(); // Dùng nguyên chức năng tải JSON đã hoạt động, không thay đổi dữ liệu.
+        preUpdateBackupRequestedFor = currentUser.uid;
+        showPreUpdateBackupReminder();
+    } catch (error) {
+        console.error('Không thể tải bản sao lưu:', error);
+        showToast('Chưa tải được JSON. Vui lòng thử lại hoặc dùng mục Cài đặt dữ liệu.', 'error');
+    }
+}
+function confirmPreUpdateBackup() {
+    if (!currentUser || preUpdateBackupRequestedFor !== currentUser.uid) {
+        showToast('Bạn cần tải file JSON trước khi xác nhận.', 'error');
+        return;
+    }
+    if (!billingCloudDataReady) {
+        showToast('Chưa xác minh được dữ liệu Cloud. Hãy kết nối mạng rồi tải lại trước khi xác nhận.', 'error');
+        return;
+    }
+    if (!confirm('Bạn đã kiểm tra và thấy file DuLieuDayThem_*.json trong thư mục Tải xuống của thiết bị?')) return;
+    try {
+        localStorage.setItem(preUpdateBackupStorageKey(), 'confirmed');
+        hidePreUpdateBackupReminder();
+        showToast('Đã xác nhận sao lưu. Hãy giữ file JSON ở nơi an toàn.');
+    } catch (error) {
+        showToast('Không lưu được trạng thái xác nhận. Vẫn nên giữ bản sao lưu JSON.', 'error');
+    }
+}
+
 let currentUser = null; 
 
 if (auth) {
@@ -130,6 +228,9 @@ onAuthStateChanged(auth, async (user) => {
         billingCheckStatus = 'pending';
         billingCloudDataReady = false;
         if (loginScreen) loginScreen.style.display = 'flex';
+        hidePreUpdateBackupReminder();
+        preUpdateBackupRequestedFor = '';
+        preUpdateBackupModalShownFor = '';
         return;
     }
     currentUser = user;
@@ -206,6 +307,7 @@ onAuthStateChanged(auth, async (user) => {
         const renewal = document.getElementById('expired-renewal-content');
         if (renewal) renewal.style.display = billingCheckStatus === 'expired' ? 'block' : 'none';
     }
+    showPreUpdateBackupReminder();
 });
 }
 
@@ -2335,6 +2437,9 @@ window.saveClass = saveClass;
 window.generateSchedules = generateSchedules;
 window.addTkbRow = addTkbRow;
 window.backupData = backupData;
+window.startPreUpdateBackup = startPreUpdateBackup;
+window.confirmPreUpdateBackup = confirmPreUpdateBackup;
+window.dismissPreUpdateBackup = dismissPreUpdateBackup;
 window.restoreData = restoreData;
 window.toggleResetDataButton = toggleResetDataButton;
 window.resetAllTutoringData = resetAllTutoringData;
