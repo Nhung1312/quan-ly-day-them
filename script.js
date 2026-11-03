@@ -1,7 +1,7 @@
 // --- HỆ THỐNG FIREBASE ĐĂNG NHẬP ---
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getFirestore, doc, setDoc, getDoc, getDocFromServer } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyAQz-4TAujSNhDV8wQY82-wnCTGJtdxhsM",
@@ -1893,6 +1893,77 @@ function saveHoliday() {
 }
 function deleteHoliday(id) { if(confirm("Xóa lịch nghỉ?")) { db.holidays = db.holidays.filter(h => h.id != id); saveData(); generateSchedules(); renderHolidays(); } }
 
+
+// ================= ĐẶT LẠI DỮ LIỆU ĐỂ NHẬP MỚI =================
+function toggleResetDataButton() {
+    const ack = document.getElementById('reset-data-backup-ack');
+    const button = document.getElementById('reset-data-button');
+    if (!button || !ack) return;
+    button.disabled = !ack.checked;
+    button.style.opacity = ack.checked ? '1' : '0.5';
+}
+
+// Không tự xóa khi tải trang. Chỉ đặt lại sau khi người dùng đã sao lưu
+// và xác nhận chủ động bằng chữ XOA + hộp thoại xác nhận cuối.
+async function resetAllTutoringData() {
+    const ack = document.getElementById('reset-data-backup-ack');
+    const button = document.getElementById('reset-data-button');
+    if (!ack || !ack.checked || !button || button.disabled) {
+        showToast('Bạn cần tải bản sao lưu trước khi đặt lại!', 'error');
+        return;
+    }
+
+    const typed = prompt('XÓA SẠCH DỮ LIỆU APP DẠY THÊM BẢN THƯỜNG.\nĐể tiếp tục, gõ chính xác: XOA');
+    if (typed !== 'XOA') return;
+    const detail = (db.classes || []).length + ' lớp, ' +
+        (db.students || []).length + ' học sinh, ' +
+        (db.sessions || []).length + ' buổi học, ' +
+        (db.tuitions || []).length + ' giao dịch học phí';
+    const scope = currentUser
+        ? 'Cả dữ liệu trên máy và Firebase của tài khoản đang đăng nhập sẽ bị đặt lại.'
+        : 'Chỉ dữ liệu lưu trên trình duyệt hiện tại sẽ bị đặt lại (chế độ khách).';
+    if (!confirm('XÁC NHẬN LẦN CUỐI\n' + detail + '\n\n' + scope +
+        '\n\nĐã có bản sao lưu JSON? Bạn có chắc chắn muốn xóa?')) return;
+
+    if (currentUser && (!firestoreDb || !navigator.onLine)) {
+        showToast('Cần kết nối Internet để đặt lại dữ liệu đang đồng bộ Firebase.', 'error');
+        return;
+    }
+
+    button.disabled = true;
+    button.style.opacity = '0.5';
+    const beforeText = button.innerHTML;
+    button.textContent = 'ĐANG ĐẶT LẠI DỮ LIỆU...';
+
+    try {
+        const emptyData = JSON.parse(JSON.stringify(defaultData));
+
+        if (currentUser) {
+            const userDataRef = doc(firestoreDb, 'DuLieuDayThem', currentUser.uid);
+            await setDoc(userDataRef, emptyData);
+
+            // Xác minh dữ liệu rỗng từ máy chủ trước khi xóa bản trong trình duyệt.
+            const verify = await getDocFromServer(userDataRef);
+            const remoteData = verify.exists() ? verify.data() : null;
+            if (!remoteData || !Object.keys(emptyData).every(key =>
+                Array.isArray(remoteData[key]) && remoteData[key].length === 0
+            )) {
+                throw new Error('Chưa xác minh được dữ liệu đã đặt lại trên Firebase.');
+            }
+        }
+
+        localStorage.setItem('tutoringData', JSON.stringify(emptyData));
+        db = emptyData;
+        location.reload();
+    } catch (err) {
+        console.error('Đặt lại dữ liệu không thành công:', err);
+        showToast('Không thể xác minh đặt lại trên Firebase. Dữ liệu trên máy chưa bị xóa. Hãy kiểm tra kết nối và bản sao lưu.', 'error');
+        button.disabled = false;
+        button.style.opacity = '1';
+        button.innerHTML = beforeText;
+    }
+}
+
 // ================= SAO LƯU & IMPORT =================
 function backupData() {
     let dataStr = JSON.stringify(db); let blob = new Blob([dataStr], {type: "application/json"}); let url = URL.createObjectURL(blob); let a = document.createElement('a'); a.href = url; let date = new Date().toISOString().split('T')[0]; a.download = `DuLieuDayThem_${date}.json`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); showToast("Đã tải bản sao lưu (File .json) xuống máy!");
@@ -1978,6 +2049,8 @@ window.generateSchedules = generateSchedules;
 window.addTkbRow = addTkbRow;
 window.backupData = backupData;
 window.restoreData = restoreData;
+window.toggleResetDataButton = toggleResetDataButton;
+window.resetAllTutoringData = resetAllTutoringData;
 window.openAddHoliday = openAddHoliday;
 window.openImportModal = openImportModal;
 window.handleImportFile = handleImportFile;
