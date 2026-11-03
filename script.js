@@ -1076,6 +1076,17 @@ let monthlyPaymentSaving = false;
 function getClassTuitionMethod(cls) {
     return cls && cls.tuitionMode === 'monthly' ? 'monthly' : 'sessions';
 }
+function openNewClassModal() {
+    document.getElementById('class-id').value = '';
+    document.getElementById('cl-name').value = '';
+    document.getElementById('cl-fee').value = '80000';
+    document.getElementById('cl-cycle').value = '10';
+    document.getElementById('cl-start').value = '';
+    document.getElementById('cl-tuition-mode').value = 'sessions';
+    document.getElementById('tkb-container').innerHTML = '';
+    toggleClassTuitionMode();
+    openModal('modal-add-class');
+}
 function toggleClassTuitionMode() {
     const select = document.getElementById('cl-tuition-mode');
     const group = document.getElementById('cl-cycle-group');
@@ -1206,8 +1217,10 @@ async function collectMonthlyTuition(studentId) {
     try {
         const fresh = getMonthlyTuitionBill(stu, month);
         if (!fresh || fresh.due <= 0) return;
+        let transactionId = Date.now();
+        while (db.tuitions.some(t => String(t.id) === String(transactionId))) transactionId++;
         db.tuitions.push({
-            id: Date.now() + Math.floor(Math.random() * 1000),
+            id: transactionId,
             studentId: stu.id, classId: bill.cls.id, date: weekLocalDateKey(new Date()),
             amount: fresh.due, billingMode: 'monthly', billingMonth: month,
             billedSessions: fresh.attended, note: 'Học phí tháng ' + month
@@ -2295,6 +2308,7 @@ window.renderTuition = renderTuition;
 window.setTuitionTab = setTuitionTab;
 window.switchTuitionMethod = switchTuitionMethod;
 window.toggleClassTuitionMode = toggleClassTuitionMode;
+window.openNewClassModal = openNewClassModal;
 window.renderMonthlyTuition = renderMonthlyTuition;
 window.exportMonthlyTuitionExcel = exportMonthlyTuitionExcel;
 window.openPayModal = openPayModal;
