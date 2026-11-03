@@ -1,0 +1,79 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Ban quyen app quan ly day them BAN THUONG - doc server (khong dung truong nguoi_dung).
+    function standardLicenseActive(userId) {
+      let license = get(/databases/$(database)/documents/ban_quyen_thuong/$(userId)).data;
+      let paidUntil = license.get('paid_until', timestamp.date(1970, 1, 1));
+      return license.trial_started_at is timestamp
+        && (request.time < license.trial_started_at + duration.value(30, 'd')
+            || (paidUntil is timestamp && request.time < paidUntil));
+    }
+
+    // 1. APP QUAN LY DAY THEM BAN THUONG
+    match /DuLieuDayThem/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      // Giai doan B: can giay phep hop le tu SERVER de ghi; sau het han van doc/sao luu.
+      allow create, update, delete: if request.auth != null
+        && request.auth.uid == userId
+        && standardLicenseActive(userId);
+    }
+
+    match /nguoi_dung/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      // Tương thích dữ liệu dùng chung với PRO, nhưng chặn field gia hạn bản thường.
+      allow create: if request.auth != null && request.auth.uid == userId
+        && !request.resource.data.keys().hasAny(['ngay_het_han_thuong']);
+      allow update: if request.auth != null && request.auth.uid == userId
+        && !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['ngay_het_han', 'ngay_het_han_thuong']);
+    }
+
+    // Ngay bat dau do server ghi. Nguoi dung khong duoc update/delete hay tu ghi paid_until.
+    match /ban_quyen_thuong/{userId} {
+      allow get: if request.auth != null && request.auth.uid == userId;
+      allow list: if false;
+      allow create: if request.auth != null && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly(['trial_started_at'])
+        && request.resource.data.keys().hasAll(['trial_started_at'])
+        && request.resource.data.trial_started_at is timestamp
+        && request.resource.data.trial_started_at == request.time;
+      allow update, delete: if false;
+    }
+
+    // 2. APP TRO LY GVCN - GIU NGUYEN
+    match /DuLieuGVCN/{userId} {
+      allow write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null;
+    }
+
+    match /khach_hang_gvcn/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null && request.auth.uid == userId
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['ngay_het_han']);
+    }
+
+    match /class_members/{memberId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+
+    match /classes/{teacherUid}/activityLogs/{logId} {
+      allow read, create: if request.auth != null;
+      allow update, delete: if request.auth != null && request.auth.uid == teacherUid;
+    }
+
+    // 3. APP TRO LY GVBM - GIU NGUYEN
+    match /DuLieuGVBM/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    match /khach_hang_gvbm/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null && request.auth.uid == userId
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['ngay_het_han']);
+    }
+  }
+}
