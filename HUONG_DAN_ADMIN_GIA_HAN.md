@@ -45,6 +45,10 @@
 - B không thể đọc hoặc ghi `DuLieuDayThem/A`.
 - GVCN, GVBM và PRO vẫn thao tác được ở những đường dẫn vốn được phép.
 
-## Chưa xác minh trực tiếp
-- Các Rules ở repo mới được kiểm tra cú pháp theo mẫu và logic bằng mô phỏng. **Chưa chạy Firebase Emulator, chưa Publish, chưa thử kết nối Firebase thật**.
-- Chưa xác minh được domain website đang dùng đã tự triển khai từ GitHub `main` hay chưa.
+## Tình trạng kiểm chứng thực tế ngày 03/11/2026
+- Người dùng đã đăng ảnh Rules **giai đoạn A** trong Firebase Console, có phiên bản Publish mới và đường dẫn `ban_quyen_thuong`; đã mở hồ sơ với `trial_started_at` hiển thị dạng Timestamp.
+- Người dùng đã thử **đăng nhập Google qua cửa sổ ẩn danh và vẫn thấy các nhóm lớp mới**, cho thấy tính năng đồng bộ dữ liệu Cloud trên phiên bản đang dùng hoạt động.
+- Nhắc sao lưu JSON đã merge vào GitHub `main` qua PR #7, nhưng chưa có ảnh/kiểm thử trực tiếp xác nhận popup đã hiện trên website đang chạy.
+- **Rules giai đoạn B chưa Publish**. Chưa kiểm thử giai đoạn B bằng Firebase Emulator/Rules Playground hoặc tài khoản thật đã hết hạn.
+- App bản thường không xuất hiện trong danh sách dự án Vercel của tài khoản đang kết nối; chưa xác minh được domain website đang dùng có tự triển khai commit `main` mới hay không.
+- Kiểm tra mô phỏng quy tắc phát hành **24/24 PASS**, nhưng các mô phỏng này không thay thế được bài kiểm thử bằng Firebase Rules thật.
