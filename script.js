@@ -805,11 +805,17 @@ function isHoliday(dateStr, classId) {
     return null;
 }
 
-function generateSchedules() {
+function generateSchedules(rebuildPending = false) {
+    const before = JSON.stringify(db.sessions);
     const today = new Date(); const maxDate = new Date(); maxDate.setDate(today.getDate() + 90);
     db.classes.forEach(cls => {
         if(!cls.tkb || cls.tkb.length === 0) return; let currDate = new Date(cls.startDate); if(isNaN(currDate)) return;
-        db.sessions = db.sessions.filter(s => { if (s.classId != cls.id) return true; if (s.isMakeup) return true; if (s.status === 'completed') return true; return false; });
+        // Giữ nguyên ID các buổi chưa học khi đăng nhập hoặc khi mở lại app.
+        // Chỉ làm mới lịch chưa dạy khi giáo viên thực sự sửa nhóm/lịch nghỉ.
+        if (rebuildPending) db.sessions = db.sessions.filter(s => {
+            if (s.classId != cls.id || s.isMakeup || s.status === 'completed') return true;
+            return false;
+        });
         while(currDate <= maxDate) {
             let dStr = currDate.toISOString().split('T')[0]; let dow = currDate.getDay() === 0 ? 8 : currDate.getDay() + 1; 
             cls.tkb.forEach(t => {
@@ -822,15 +828,12 @@ function generateSchedules() {
             currDate.setDate(currDate.getDate() + 1);
         }
     });
-    saveData(); 
+    if (JSON.stringify(db.sessions) !== before) saveData();
 }
 
 // ================= BẢNG ĐIỀU KHIỂN =================
 function updateDashboard() {
-    db.sessions = db.sessions.filter(s => db.classes.some(c => c.id == s.classId)); 
-    db.students = db.students.filter(s => db.classes.some(c => c.id == s.classId)); 
-    db.tuitions = db.tuitions.filter(t => db.classes.some(c => c.id == t.classId)); 
-    db.attendance = db.attendance.filter(a => db.sessions.some(s => String(s.id) === String(a.sessionId)));
+    // Vẽ báo cáo phải là thao tác chỉ đọc: không xóa dữ liệu mỗi lần chuyển màn hình.
     
     document.getElementById('dash-total-classes').innerText = db.classes.length; 
     
@@ -2299,7 +2302,18 @@ function renderClasses() {
     populateClassSelects();
 }
 
-function deleteClass(id) { if(confirm("CẢNH BÁO ĐỎ: Xóa nhóm lớp sẽ XÓA VĨNH VIỄN toàn bộ dữ liệu của lớp này. Bạn chắc chắn chứ?")) { db.classes = db.classes.filter(c => c.id != id); saveData(); renderClasses(); showToast("Đã xóa nhóm lớp!"); } }
+function deleteClass(id) {
+    if (!confirm("CẢNH BÁO ĐỎ: Xóa nhóm lớp sẽ XÓA VĨNH VIỄN toàn bộ dữ liệu của lớp này. Bạn chắc chắn chứ?")) return;
+    const removedSessionIds = new Set(db.sessions.filter(s => String(s.classId) === String(id)).map(s => String(s.id)));
+    db.classes = db.classes.filter(c => String(c.id) !== String(id));
+    db.students = db.students.filter(s => String(s.classId) !== String(id));
+    db.sessions = db.sessions.filter(s => String(s.classId) !== String(id));
+    db.tuitions = db.tuitions.filter(t => String(t.classId) !== String(id));
+    db.attendance = db.attendance.filter(a => !removedSessionIds.has(String(a.sessionId)));
+    saveData();
+    renderClasses();
+    showToast("Đã xóa nhóm lớp!");
+}
 function addTkbRow(day=2, start='18:00', end='20:00') { const div = document.createElement('div'); div.className = 'form-row tkb-row mb-15'; div.style.alignItems = 'center'; div.innerHTML = `<select class="tkb-day" style="flex: 1; padding: 12px 5px; text-align: center; min-width: 60px;"><option value="2">T2</option><option value="3">T3</option><option value="4">T4</option><option value="5">T5</option><option value="6">T6</option><option value="7">T7</option><option value="8">CN</option></select><input type="time" class="tkb-start" value="${start}" style="flex: 1.2; padding: 12px 5px; text-align: center;"><input type="time" class="tkb-end" value="${end}" style="flex: 1.2; padding: 12px 5px; text-align: center;"><button class="btn-outline-action text-red" style="flex-shrink: 0; width: 44px; height: 44px; padding: 0;" onclick="this.parentElement.remove()"><i class="fas fa-trash"></i></button>`; div.querySelector('.tkb-day').value = day; document.getElementById('tkb-container').appendChild(div); }
 function saveClass() {
     const id = document.getElementById('class-id').value;
@@ -2329,7 +2343,7 @@ function saveClass() {
         if (index < 0) return showToast('Không tìm thấy nhóm cần sửa!', 'error');
         db.classes[index] = { ...db.classes[index], ...obj };
     } else db.classes.push(obj);
-    saveData(); closeModal('modal-add-class'); renderClasses(); generateSchedules();
+    saveData(); closeModal('modal-add-class'); renderClasses(); generateSchedules(true);
     showToast('Đã lưu Nhóm!');
 }
 function editClass(id) { let c = db.classes.find(x => x.id == id); if(!c) return; document.getElementById('class-id').value = c.id; document.getElementById('cl-name').value = c.name; document.getElementById('cl-fee').value = c.fee; document.getElementById('cl-cycle').value = c.cycle; document.getElementById('cl-start').value = c.startDate; document.getElementById('cl-tuition-mode').value = getClassTuitionMethod(c); toggleClassTuitionMode(); document.getElementById('tkb-container').innerHTML = ''; c.tkb.forEach(t => addTkbRow(t.dayOfWeek, t.start, t.end)); openModal('modal-add-class'); }
@@ -2442,9 +2456,9 @@ function editHoliday(id) { let h = db.holidays.find(x => x.id == id); if(!h) ret
 function saveHoliday() {
     let id = document.getElementById('hol-id').value; let name = document.getElementById('hol-name').value, start = document.getElementById('hol-start').value, end = document.getElementById('hol-end').value; let cid = document.getElementById('hol-class').value; if(!name || !start || !end) return showToast("Nhập đủ thông tin!", "error");
     if(id) { let index = db.holidays.findIndex(h => h.id == id); if(index > -1) db.holidays[index] = { id: parseInt(id), name, start, end, classId: cid }; } else { db.holidays.push({ id: Date.now(), name, start, end, classId: cid }); }
-    saveData(); generateSchedules(); closeModal('modal-add-holiday'); if(document.getElementById('view-calendar').classList.contains('active')) renderHolidays(); showToast("Đã lưu lịch nghỉ & Cập nhật Lịch học!");
+    saveData(); generateSchedules(true); closeModal('modal-add-holiday'); if(document.getElementById('view-calendar').classList.contains('active')) renderHolidays(); showToast("Đã lưu lịch nghỉ & Cập nhật Lịch học!");
 }
-function deleteHoliday(id) { if(confirm("Xóa lịch nghỉ?")) { db.holidays = db.holidays.filter(h => h.id != id); saveData(); generateSchedules(); renderHolidays(); } }
+function deleteHoliday(id) { if(confirm("Xóa lịch nghỉ?")) { db.holidays = db.holidays.filter(h => h.id != id); saveData(); generateSchedules(true); renderHolidays(); } }
 
 
 // ================= ĐẶT LẠI DỮ LIỆU ĐỂ NHẬP MỚI =================
