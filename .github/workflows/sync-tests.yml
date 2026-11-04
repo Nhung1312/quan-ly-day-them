@@ -1,0 +1,23 @@
+name: Dạy thêm thường - kiểm thử đồng bộ dữ liệu
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check syntax
+        run: npm run lint
+      - name: Run sync regression tests
+        run: npm test
