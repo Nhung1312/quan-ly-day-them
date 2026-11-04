@@ -221,6 +221,11 @@ let currentUser = null;
 if (auth) {
 onAuthStateChanged(auth, async (user) => {
     if (!user) {
+        stopRealtimeCloudSync();
+        cloudBaselineSignature = null;
+        cloudHasConflict = false;
+        localChangeVersion = 0;
+        lastSavedVersion = 0;
         currentUser = null;
         billingAccountEmail = '';
         billingAccountUid = '';
@@ -233,6 +238,11 @@ onAuthStateChanged(auth, async (user) => {
         preUpdateBackupModalShownFor = '';
         return;
     }
+    stopRealtimeCloudSync();
+    cloudBaselineSignature = null;
+    cloudHasConflict = false;
+    localChangeVersion = 0;
+    lastSavedVersion = 0;
     currentUser = user;
     billingAccountEmail = user.email || '';
     billingAccountUid = user.uid || '';
@@ -268,12 +278,22 @@ onAuthStateChanged(auth, async (user) => {
         const ref = doc(firestoreDb,'DuLieuDayThem',user.uid);
         const snapshot = await getDocFromServer(ref);
         if (snapshot.exists()) {
-            db = Object.assign({},defaultData,snapshot.data());
+            cloudBaselineSignature = canonicalCloudSignature(snapshot.data());
             billingCloudDataReady = true;
-            localStorage.setItem('tutoringData',JSON.stringify(db));
+            if (hasPendingSync(user.uid)) {
+                // Dữ liệu đã sửa trên máy nhưng chưa xác nhận được đã ghi Cloud.
+                // Không ghi đè bản cục bộ hoặc tự đưa nó lên mây khi chưa đối chiếu.
+                cloudHasConflict = true;
+                showToast('Thiết bị đang có dữ liệu chưa đồng bộ. Hãy sao lưu JSON, không bấm F5 để ghi đè.', 'error');
+            } else {
+                db = Object.assign({}, defaultData, snapshot.data());
+                localStorage.setItem('tutoringData', JSON.stringify(db));
+            }
         } else if (verified && access.permitted) {
-            await setDoc(ref,db);
+            await setDoc(ref, db);
+            cloudBaselineSignature = canonicalCloudSignature(db);
             billingCloudDataReady = true;
+            persistPendingSync(user.uid, false);
         }
     } catch (error) {
         console.warn('Lỗi tải dữ liệu Cloud:',error);
@@ -308,6 +328,7 @@ onAuthStateChanged(auth, async (user) => {
         if (renewal) renewal.style.display = billingCheckStatus === 'expired' ? 'block' : 'none';
     }
     showPreUpdateBackupReminder();
+    if (billingCloudDataReady) startRealtimeCloudSync(user.uid);
 });
 }
 
@@ -469,11 +490,8 @@ async function flushPendingCloudChanges() {
         }
         return true;
     } finally {
+        // Không tự thử lại vô hạn khi Cloud đang từ chối hoặc thiết bị mất mạng.
         cloudSavePromise = null;
-        if (!cloudHasConflict && lastSavedVersion < localChangeVersion &&
-            currentUser && currentUser.uid === uid && !billingAccountLocked) {
-            cloudSavePromise = flushPendingCloudChanges();
-        }
     }
 }
 async function saveData() {
