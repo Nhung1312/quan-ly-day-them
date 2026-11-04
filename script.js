@@ -1,7 +1,7 @@
 // --- HỆ THỐNG FIREBASE ĐĂNG NHẬP ---
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-import { getFirestore, doc, setDoc, getDoc, getDocFromServer, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getFirestore, doc, setDoc, getDoc, getDocFromServer, serverTimestamp, onSnapshot, runTransaction } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyAQz-4TAujSNhDV8wQY82-wnCTGJtdxhsM",
@@ -336,24 +336,170 @@ let db = stored ? Object.assign({}, defaultData, stored) : defaultData;
 db.classes = db.classes || []; db.students = db.students || []; db.holidays = db.holidays || [];
 db.sessions = db.sessions || []; db.attendance = db.attendance || []; db.tuitions = db.tuitions || [];
 
-async function saveData() {
-    if (!currentUser || billingAccountLocked) {
-        showToast('Cần đăng nhập và còn hạn sử dụng để lưu dữ liệu.', 'error');
-        return;
+// Đồng bộ theo tài liệu của từng tài khoản. Không sử dụng dữ liệu của tài khoản khác.
+const PENDING_SYNC_PREFIX = 'qldt:pending-cloud:';
+let stopCloudListener = null;
+let cloudBaselineSignature = null;
+let cloudSavePromise = null;
+let localChangeVersion = 0;
+let lastSavedVersion = 0;
+let cloudHasConflict = false;
+
+function pendingSyncKey(uid) {
+    return PENDING_SYNC_PREFIX + uid;
+}
+function canonicalCloudSignature(data) {
+    if (data === null) return 'null';
+    if (Array.isArray(data)) return '[' + data.map(canonicalCloudSignature).join(',') + ']';
+    if (data && typeof data === 'object') {
+        return '{' + Object.keys(data).sort().map(key =>
+            JSON.stringify(key) + ':' + canonicalCloudSignature(data[key])
+        ).join(',') + '}';
     }
-    localStorage.setItem('tutoringData', JSON.stringify(db));
-    updateDashboard(); 
-    if (currentUser) {
-        try {
-            const docRef = doc(firestoreDb, "DuLieuDayThem", currentUser.uid);
-            await setDoc(docRef, db);
-        } catch (e) {
-            console.error("Lỗi khi đồng bộ lên mây: ", e);
-            showToast('Không đồng bộ được Firebase. Dữ liệu mới chỉ lưu trên máy; hãy sao lưu JSON và kiểm tra mạng/bản quyền.', 'error');
+    return JSON.stringify(data);
+}
+function hasPendingSync(uid) {
+    try { return localStorage.getItem(pendingSyncKey(uid)) === '1'; }
+    catch (e) { return false; }
+}
+function persistPendingSync(uid, pending) {
+    try {
+        if (pending) localStorage.setItem(pendingSyncKey(uid), '1');
+        else localStorage.removeItem(pendingSyncKey(uid));
+    } catch(e) {
+        console.warn('Không lưu được trạng thái đồng bộ:', e);
+    }
+}
+function refreshVisibleDataView() {
+    const active = document.querySelector('.view.active');
+    if (!active) return;
+    // Không phá biểu mẫu người dùng đang nhập dở.
+    const focused = document.activeElement;
+    if (focused && active.contains(focused) && ['INPUT','TEXTAREA','SELECT'].includes(focused.tagName)) return;
+    switch (active.id) {
+        case 'view-home': updateDashboard(); break;
+        case 'view-classes': renderClasses(); break;
+        case 'view-students': renderStudents(); break;
+        case 'view-tuition':
+            if (currentTuitionMethod === 'monthly') renderMonthlyTuition();
+            else renderTuition();
+            break;
+        case 'view-statistics': renderStatistics(); break;
+        case 'view-calendar': {
+            const tab = document.querySelector('#view-calendar .cal-tab:not(.hidden)');
+            if (tab && tab.id === 'tab-week') renderWeekCalendar();
+            else if (tab && tab.id === 'tab-holiday') renderHolidays();
+            else if (tab && tab.id === 'tab-makeup') renderMakeups();
+            else if (tab && tab.id === 'tab-month') renderMonthClasses();
+            else renderUpcomingClasses();
+            break;
         }
     }
 }
-
+function adoptCloudData(snapshotData) {
+    db = Object.assign({}, defaultData, snapshotData);
+    localStorage.setItem('tutoringData', JSON.stringify(db));
+    updateDashboard();
+    refreshVisibleDataView();
+}
+function stopRealtimeCloudSync() {
+    if (stopCloudListener) {
+        stopCloudListener();
+        stopCloudListener = null;
+    }
+}
+function startRealtimeCloudSync(uid) {
+    stopRealtimeCloudSync();
+    if (!firestoreDb || !uid || !billingCloudDataReady) return;
+    const ref = doc(firestoreDb, 'DuLieuDayThem', uid);
+    stopCloudListener = onSnapshot(ref, snapshot => {
+        if (!currentUser || currentUser.uid !== uid ||
+            snapshot.metadata.fromCache || snapshot.metadata.hasPendingWrites || !snapshot.exists()) return;
+        const remoteSignature = canonicalCloudSignature(snapshot.data());
+        if (remoteSignature === cloudBaselineSignature) return;
+        // Không để ảnh chụp Cloud ghi đè thao tác chưa lưu hoặc đang chờ đồng bộ.
+        if (cloudSavePromise) return;
+        if (cloudHasConflict || hasPendingSync(uid)) {
+            if (!cloudHasConflict) showToast('Cloud vừa thay đổi nhưng thiết bị có dữ liệu chưa đồng bộ. Hãy sao lưu JSON trước khi xử lý.', 'error');
+            cloudHasConflict = true;
+            return;
+        }
+        cloudBaselineSignature = remoteSignature;
+        adoptCloudData(snapshot.data());
+        showToast('☁️ Dữ liệu mới từ thiết bị khác đã tự cập nhật.');
+    }, error => {
+        console.warn('Không lắng nghe được thay đổi Cloud:', error);
+        showToast('Mất kết nối nhận cập nhật Cloud. Dữ liệu đang xem có thể chưa mới.', 'error');
+    });
+}
+async function flushPendingCloudChanges() {
+    const uid = currentUser && currentUser.uid;
+    if (!uid || !firestoreDb || !billingCloudDataReady || cloudHasConflict) return false;
+    try {
+        while (lastSavedVersion < localChangeVersion) {
+            if (!currentUser || currentUser.uid !== uid || billingAccountLocked) return false;
+            const version = localChangeVersion;
+            const payload = JSON.parse(JSON.stringify(db));
+            const expectedSignature = cloudBaselineSignature;
+            const ref = doc(firestoreDb, 'DuLieuDayThem', uid);
+            try {
+                // Một phiên cũ không được ghi đè số liệu do thiết bị khác cập nhật.
+                await runTransaction(firestoreDb, async transaction => {
+                    const latest = await transaction.get(ref);
+                    const actualSignature = latest.exists()
+                        ? canonicalCloudSignature(latest.data()) : null;
+                    if (actualSignature !== expectedSignature) {
+                        throw new Error('CLOUD_VERSION_CONFLICT');
+                    }
+                    transaction.set(ref, payload);
+                });
+            } catch (error) {
+                if (String(error.message || error).includes('CLOUD_VERSION_CONFLICT')) {
+                    cloudHasConflict = true;
+                    showToast('Dữ liệu đã được sửa trên thiết bị khác. Bản trên máy được giữ lại; hãy sao lưu JSON trước khi làm tiếp.', 'error');
+                } else {
+                    showToast('Đã lưu trên máy nhưng chưa đồng bộ Cloud. Hãy kiểm tra mạng; không cần bấm F5.', 'error');
+                }
+                console.warn('Chưa đồng bộ dữ liệu dạy thêm:', error);
+                return false;
+            }
+            cloudBaselineSignature = canonicalCloudSignature(payload);
+            lastSavedVersion = version;
+            if (lastSavedVersion === localChangeVersion) persistPendingSync(uid, false);
+        }
+        return true;
+    } finally {
+        cloudSavePromise = null;
+        if (!cloudHasConflict && lastSavedVersion < localChangeVersion &&
+            currentUser && currentUser.uid === uid && !billingAccountLocked) {
+            cloudSavePromise = flushPendingCloudChanges();
+        }
+    }
+}
+async function saveData() {
+    if (!currentUser || billingAccountLocked) {
+        showToast('Cần đăng nhập và còn hạn sử dụng để lưu dữ liệu.', 'error');
+        return false;
+    }
+    // Cập nhật giao diện tức thì, không đòi hỏi F5.
+    localStorage.setItem('tutoringData', JSON.stringify(db));
+    updateDashboard();
+    refreshVisibleDataView();
+    persistPendingSync(currentUser.uid, true);
+    localChangeVersion += 1;
+    if (!billingCloudDataReady || cloudHasConflict) {
+        showToast('Dữ liệu đã được giữ trên máy nhưng chưa đồng bộ Cloud. Hãy tải bản sao lưu JSON.', 'error');
+        return false;
+    }
+    if (!cloudSavePromise) cloudSavePromise = flushPendingCloudChanges();
+    return cloudSavePromise;
+}
+window.addEventListener('online', () => {
+    if (currentUser && !billingAccountLocked && billingCloudDataReady &&
+        hasPendingSync(currentUser.uid) && !cloudHasConflict && !cloudSavePromise) {
+        cloudSavePromise = flushPendingCloudChanges();
+    }
+});
 function getTodayStr() { return new Date().toISOString().split('T')[0]; }
 function parseDateVi(dStr) { 
     if(!dStr) return '--/--';
