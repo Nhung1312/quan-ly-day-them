@@ -131,7 +131,7 @@ test('Không ghi đè dữ liệu khi một thiết bị dùng bản Cloud cũ',
   // Trong thực tế runTransaction đọc bản Cloud mới nhất.
   const fake = harness();
   fake.setDb({ ...fake.getDb(), students: [{ id: 1, name: 'Sửa cục bộ' }] });
-  fake.setBaseline(fake.canonicalCloudSignature(h.getRemote()));
+  fake.setBaseline('old-cloud-version');
   const saved = await fake.saveData();
   assert.equal(saved, false);
   assert.equal(fake.getDirty(), true);
@@ -146,7 +146,7 @@ test('Dấu phiên bản dữ liệu không phụ thuộc thứ tự khóa', () 
 });
 
 test('Không xóa học sinh hoặc giao dịch chỉ vì hiển thị Dashboard', () => {
-  const dashboard = extract('function updateDashboard() {', '\nfunction setAttStatus(');
+  const dashboard = extract('function updateDashboard() {', '\nfunction openAttendance(');
   const leading = dashboard.split('\n').slice(0, 20).join('\n');
   assert.doesNotMatch(leading, /db\.(students|tuitions|attendance|sessions)\s*=\s*db\./);
 });
