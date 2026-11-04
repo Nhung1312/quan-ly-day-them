@@ -1545,9 +1545,10 @@ async function collectMonthlyTuition(studentId) {
             amount: fresh.due, billingMode: 'monthly', billingMonth: month,
             billedSessions: fresh.attended, note: 'Học phí tháng ' + month
         });
-        await saveData();
+        const synced = await saveData();
         renderMonthlyTuition();
-        showToast('Đã ghi nhận học phí tháng ' + month + '.');
+        if (synced) showToast('Đã ghi nhận học phí tháng ' + month + ' và đồng bộ Cloud.');
+        else showToast('Đã lưu trên máy; giao dịch học phí chưa được Cloud xác nhận. Hãy sao lưu JSON.', 'error');
     } catch (err) {
         console.error(err);
         showToast('Lỗi ghi nhận học phí tháng. Kiểm tra dữ liệu trước khi thu lại.', 'error');
@@ -1561,9 +1562,10 @@ async function cancelMonthlyTuition(id) {
     if (!confirm('Hủy giao dịch thu ' + Number(transaction.amount).toLocaleString('vi-VN') +
         'đ cho tháng ' + transaction.billingMonth + '?')) return;
     db.tuitions = db.tuitions.filter(t => String(t.id) !== String(id));
-    await saveData();
+    const synced = await saveData();
     renderMonthlyTuition();
-    showToast('Đã hủy giao dịch học phí tháng.');
+    if (synced) showToast('Đã hủy giao dịch học phí tháng và đồng bộ Cloud.');
+    else showToast('Thao tác đã lưu trên máy nhưng Cloud chưa xác nhận. Hãy sao lưu JSON.', 'error');
 }
 
 function exportMonthlyTuitionExcel() {
@@ -1961,7 +1963,7 @@ function onPayCycleSelectionChange() {
     document.getElementById('pay-total-amount').innerText = totalAmount.toLocaleString() + 'đ';
 }
 
-function confirmPayment() {
+async function confirmPayment() {
     if (!currentPayStudentInfo || currentSelectedCycles.length === 0) {
         return showToast("Vui lòng chọn ít nhất một kỳ để thu tiền!", "error");
     }
@@ -1990,10 +1992,11 @@ function confirmPayment() {
         });
     });
 
-    saveData();
+    const synced = await saveData();
     closeModal('modal-pay-tuition');
     renderTuition();
-    showToast(`✅ Đã ghi nhận thu học phí ${currentSelectedCycles.length} kỳ thành công!`);
+    if (synced) showToast('✅ Đã ghi nhận thu học phí ' + currentSelectedCycles.length + ' kỳ và đồng bộ Cloud.');
+    else showToast('Đã lưu trên máy; giao dịch chưa đồng bộ Cloud. Hãy sao lưu JSON.', 'error');
 }
 
 // ================= ZALO & THÔNG BÁO HỌC PHÍ KÈM QR GIÁO VIÊN =================
@@ -2537,16 +2540,32 @@ function backupData() {
 }
 
 function restoreData(event) {
-    let file = event.target.files[0]; if(!file) return; let reader = new FileReader();
-    reader.onload = function(e) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async function(e) {
         try {
-            let parsed = JSON.parse(e.target.result);
-            if(parsed.classes && parsed.students) { 
-                if(confirm("CẢNH BÁO: Dữ liệu hiện tại trên trình duyệt sẽ bị GHI ĐÈ hoàn toàn bởi dữ liệu từ file này. Bạn có chắc chắn muốn khôi phục?")) { db = parsed; saveData(); closeModal('modal-settings'); alert("Khôi phục thành công! Nhấn OK để tải lại ứng dụng."); location.reload(); }
-            } else { showToast("File khôi phục không hợp lệ!", "error"); }
-        } catch(err) { showToast("Lỗi đọc file!", "error"); }
+            const parsed = JSON.parse(e.target.result);
+            if (!parsed.classes || !parsed.students || !Array.isArray(parsed.classes) || !Array.isArray(parsed.students)) {
+                return showToast('File khôi phục không hợp lệ!', 'error');
+            }
+            if (!confirm('Dữ liệu hiện tại sẽ được thay bằng dữ liệu trong tệp. Bạn đã có bản sao lưu JSON?')) return;
+            db = Object.assign({}, defaultData, parsed);
+            const synced = await saveData();
+            closeModal('modal-settings');
+            if (synced) {
+                alert('Đã khôi phục và xác nhận đồng bộ Firebase. Ứng dụng sẽ tải lại.');
+                location.reload();
+            } else {
+                showToast('Đã giữ bản khôi phục trên máy nhưng chưa xác nhận Cloud. Không tự tải lại để tránh mất dữ liệu.', 'error');
+            }
+        } catch (err) {
+            console.error('Lỗi khôi phục dữ liệu:', err);
+            showToast('Không thể đọc hoặc khôi phục file!', 'error');
+        }
     };
-    reader.readAsText(file); event.target.value = ''; 
+    reader.readAsText(file);
+    event.target.value = '';
 }
 
 let parsedData = [];
