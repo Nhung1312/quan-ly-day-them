@@ -1,7 +1,7 @@
 // --- HỆ THỐNG FIREBASE ĐĂNG NHẬP ---
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-import { getFirestore, doc, setDoc, getDoc, getDocFromServer, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getFirestore, doc, setDoc, getDoc, getDocFromServer, serverTimestamp, onSnapshot, runTransaction } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyAQz-4TAujSNhDV8wQY82-wnCTGJtdxhsM",
@@ -221,6 +221,11 @@ let currentUser = null;
 if (auth) {
 onAuthStateChanged(auth, async (user) => {
     if (!user) {
+        stopRealtimeCloudSync();
+        cloudBaselineSignature = null;
+        cloudHasConflict = false;
+        localChangeVersion = 0;
+        lastSavedVersion = 0;
         currentUser = null;
         billingAccountEmail = '';
         billingAccountUid = '';
@@ -233,6 +238,11 @@ onAuthStateChanged(auth, async (user) => {
         preUpdateBackupModalShownFor = '';
         return;
     }
+    stopRealtimeCloudSync();
+    cloudBaselineSignature = null;
+    cloudHasConflict = false;
+    localChangeVersion = 0;
+    lastSavedVersion = 0;
     currentUser = user;
     billingAccountEmail = user.email || '';
     billingAccountUid = user.uid || '';
@@ -268,12 +278,22 @@ onAuthStateChanged(auth, async (user) => {
         const ref = doc(firestoreDb,'DuLieuDayThem',user.uid);
         const snapshot = await getDocFromServer(ref);
         if (snapshot.exists()) {
-            db = Object.assign({},defaultData,snapshot.data());
+            cloudBaselineSignature = canonicalCloudSignature(snapshot.data());
             billingCloudDataReady = true;
-            localStorage.setItem('tutoringData',JSON.stringify(db));
+            if (hasPendingSync(user.uid)) {
+                // Dữ liệu đã sửa trên máy nhưng chưa xác nhận được đã ghi Cloud.
+                // Không ghi đè bản cục bộ hoặc tự đưa nó lên mây khi chưa đối chiếu.
+                cloudHasConflict = true;
+                showToast('Thiết bị đang có dữ liệu chưa đồng bộ. Hãy sao lưu JSON, không bấm F5 để ghi đè.', 'error');
+            } else {
+                db = Object.assign({}, defaultData, snapshot.data());
+                localStorage.setItem('tutoringData', JSON.stringify(db));
+            }
         } else if (verified && access.permitted) {
-            await setDoc(ref,db);
+            await setDoc(ref, db);
+            cloudBaselineSignature = canonicalCloudSignature(db);
             billingCloudDataReady = true;
+            persistPendingSync(user.uid, false);
         }
     } catch (error) {
         console.warn('Lỗi tải dữ liệu Cloud:',error);
@@ -308,6 +328,7 @@ onAuthStateChanged(auth, async (user) => {
         if (renewal) renewal.style.display = billingCheckStatus === 'expired' ? 'block' : 'none';
     }
     showPreUpdateBackupReminder();
+    if (billingCloudDataReady) startRealtimeCloudSync(user.uid);
 });
 }
 
@@ -336,24 +357,187 @@ let db = stored ? Object.assign({}, defaultData, stored) : defaultData;
 db.classes = db.classes || []; db.students = db.students || []; db.holidays = db.holidays || [];
 db.sessions = db.sessions || []; db.attendance = db.attendance || []; db.tuitions = db.tuitions || [];
 
-async function saveData() {
-    if (!currentUser || billingAccountLocked) {
-        showToast('Cần đăng nhập và còn hạn sử dụng để lưu dữ liệu.', 'error');
-        return;
+// Đồng bộ theo tài liệu của từng tài khoản. Không sử dụng dữ liệu của tài khoản khác.
+const PENDING_SYNC_PREFIX = 'qldt:pending-cloud:';
+let stopCloudListener = null;
+let cloudBaselineSignature = null;
+let cloudSavePromise = null;
+let localChangeVersion = 0;
+let lastSavedVersion = 0;
+let cloudHasConflict = false;
+let deferredCloudData = null;
+
+function pendingSyncKey(uid) {
+    return PENDING_SYNC_PREFIX + uid;
+}
+function canonicalCloudSignature(data) {
+    if (data === null) return 'null';
+    if (Array.isArray(data)) return '[' + data.map(canonicalCloudSignature).join(',') + ']';
+    if (data && typeof data === 'object') {
+        return '{' + Object.keys(data).sort().map(key =>
+            JSON.stringify(key) + ':' + canonicalCloudSignature(data[key])
+        ).join(',') + '}';
     }
-    localStorage.setItem('tutoringData', JSON.stringify(db));
-    updateDashboard(); 
-    if (currentUser) {
-        try {
-            const docRef = doc(firestoreDb, "DuLieuDayThem", currentUser.uid);
-            await setDoc(docRef, db);
-        } catch (e) {
-            console.error("Lỗi khi đồng bộ lên mây: ", e);
-            showToast('Không đồng bộ được Firebase. Dữ liệu mới chỉ lưu trên máy; hãy sao lưu JSON và kiểm tra mạng/bản quyền.', 'error');
+    return JSON.stringify(data);
+}
+function hasPendingSync(uid) {
+    try { return localStorage.getItem(pendingSyncKey(uid)) === '1'; }
+    catch (e) { return false; }
+}
+function persistPendingSync(uid, pending) {
+    try {
+        if (pending) localStorage.setItem(pendingSyncKey(uid), '1');
+        else localStorage.removeItem(pendingSyncKey(uid));
+    } catch(e) {
+        console.warn('Không lưu được trạng thái đồng bộ:', e);
+    }
+}
+function refreshVisibleDataView() {
+    const active = document.querySelector('.view.active');
+    if (!active) return;
+    // Không phá biểu mẫu người dùng đang nhập dở.
+    const focused = document.activeElement;
+    if (focused && active.contains(focused) && ['INPUT','TEXTAREA','SELECT'].includes(focused.tagName)) return;
+    switch (active.id) {
+        case 'view-home': updateDashboard(); break;
+        case 'view-classes': renderClasses(); break;
+        case 'view-students': renderStudents(); break;
+        case 'view-tuition':
+            if (currentTuitionMethod === 'monthly') renderMonthlyTuition();
+            else renderTuition();
+            break;
+        case 'view-statistics': renderStatistics(); break;
+        case 'view-calendar': {
+            const tab = document.querySelector('#view-calendar .cal-tab:not(.hidden)');
+            if (tab && tab.id === 'tab-week') renderWeekCalendar();
+            else if (tab && tab.id === 'tab-holiday') renderHolidays();
+            else if (tab && tab.id === 'tab-makeup') renderMakeups();
+            else if (tab && tab.id === 'tab-month') renderMonthClasses();
+            else renderUpcomingClasses();
+            break;
         }
     }
 }
-
+function adoptCloudData(snapshotData) {
+    db = Object.assign({}, defaultData, snapshotData);
+    localStorage.setItem('tutoringData', JSON.stringify(db));
+    updateDashboard();
+    refreshVisibleDataView();
+}
+function applyDeferredCloudData() {
+    if (!deferredCloudData || !currentUser || hasPendingSync(currentUser.uid) ||
+        cloudSavePromise || cloudHasConflict) return;
+    const payload = deferredCloudData;
+    deferredCloudData = null;
+    const signature = canonicalCloudSignature(payload);
+    if (signature !== cloudBaselineSignature) {
+        cloudBaselineSignature = signature;
+        adoptCloudData(payload);
+        showToast('☁️ Đã cập nhật dữ liệu mới sau khi đóng cửa sổ điểm danh.');
+    }
+}
+function stopRealtimeCloudSync() {
+    deferredCloudData = null;
+    if (stopCloudListener) {
+        stopCloudListener();
+        stopCloudListener = null;
+    }
+}
+function startRealtimeCloudSync(uid) {
+    stopRealtimeCloudSync();
+    if (!firestoreDb || !uid || !billingCloudDataReady) return;
+    const ref = doc(firestoreDb, 'DuLieuDayThem', uid);
+    stopCloudListener = onSnapshot(ref, snapshot => {
+        if (!currentUser || currentUser.uid !== uid ||
+            snapshot.metadata.fromCache || snapshot.metadata.hasPendingWrites || !snapshot.exists()) return;
+        const remoteSignature = canonicalCloudSignature(snapshot.data());
+        if (remoteSignature === cloudBaselineSignature) return;
+        // Phiếu điểm danh có thể còn lựa chọn chưa bấm Lưu.
+        const editingAttendance = document.getElementById('modal-attendance');
+        if (editingAttendance && editingAttendance.style.display === 'flex') {
+            deferredCloudData = snapshot.data();
+            return;
+        }
+        // Không để ảnh chụp Cloud ghi đè thao tác chưa lưu hoặc đang chờ đồng bộ.
+        if (cloudSavePromise) return;
+        if (cloudHasConflict || hasPendingSync(uid)) {
+            if (!cloudHasConflict) showToast('Cloud vừa thay đổi nhưng thiết bị có dữ liệu chưa đồng bộ. Hãy sao lưu JSON trước khi xử lý.', 'error');
+            cloudHasConflict = true;
+            return;
+        }
+        cloudBaselineSignature = remoteSignature;
+        adoptCloudData(snapshot.data());
+        showToast('☁️ Dữ liệu mới từ thiết bị khác đã tự cập nhật.');
+    }, error => {
+        console.warn('Không lắng nghe được thay đổi Cloud:', error);
+        showToast('Mất kết nối nhận cập nhật Cloud. Dữ liệu đang xem có thể chưa mới.', 'error');
+    });
+}
+async function flushPendingCloudChanges() {
+    const uid = currentUser && currentUser.uid;
+    if (!uid || !firestoreDb || !billingCloudDataReady || cloudHasConflict) return false;
+    try {
+        while (lastSavedVersion < localChangeVersion) {
+            if (!currentUser || currentUser.uid !== uid || billingAccountLocked) return false;
+            const version = localChangeVersion;
+            const payload = JSON.parse(JSON.stringify(db));
+            const expectedSignature = cloudBaselineSignature;
+            const ref = doc(firestoreDb, 'DuLieuDayThem', uid);
+            try {
+                // Một phiên cũ không được ghi đè số liệu do thiết bị khác cập nhật.
+                await runTransaction(firestoreDb, async transaction => {
+                    const latest = await transaction.get(ref);
+                    const actualSignature = latest.exists()
+                        ? canonicalCloudSignature(latest.data()) : null;
+                    if (actualSignature !== expectedSignature) {
+                        throw new Error('CLOUD_VERSION_CONFLICT');
+                    }
+                    transaction.set(ref, payload);
+                });
+            } catch (error) {
+                if (String(error.message || error).includes('CLOUD_VERSION_CONFLICT')) {
+                    cloudHasConflict = true;
+                    showToast('Dữ liệu đã được sửa trên thiết bị khác. Bản trên máy được giữ lại; hãy sao lưu JSON trước khi làm tiếp.', 'error');
+                } else {
+                    showToast('Đã lưu trên máy nhưng chưa đồng bộ Cloud. Hãy kiểm tra mạng; không cần bấm F5.', 'error');
+                }
+                console.warn('Chưa đồng bộ dữ liệu dạy thêm:', error);
+                return false;
+            }
+            cloudBaselineSignature = canonicalCloudSignature(payload);
+            lastSavedVersion = version;
+            if (lastSavedVersion === localChangeVersion) persistPendingSync(uid, false);
+        }
+        return true;
+    } finally {
+        // Không tự thử lại vô hạn khi Cloud đang từ chối hoặc thiết bị mất mạng.
+        cloudSavePromise = null;
+    }
+}
+async function saveData() {
+    if (!currentUser || billingAccountLocked) {
+        showToast('Cần đăng nhập và còn hạn sử dụng để lưu dữ liệu.', 'error');
+        return false;
+    }
+    // Cập nhật giao diện tức thì, không đòi hỏi F5.
+    localStorage.setItem('tutoringData', JSON.stringify(db));
+    updateDashboard();
+    refreshVisibleDataView();
+    persistPendingSync(currentUser.uid, true);
+    localChangeVersion += 1;
+    if (!billingCloudDataReady || cloudHasConflict) {
+        showToast('Dữ liệu đã được giữ trên máy nhưng chưa đồng bộ Cloud. Hãy tải bản sao lưu JSON.', 'error');
+        return false;
+    }
+    if (!cloudSavePromise) cloudSavePromise = flushPendingCloudChanges();
+    return cloudSavePromise;
+}
+window.addEventListener('online', () => {
+    if (currentUser && !billingAccountLocked && billingCloudDataReady &&
+        hasPendingSync(currentUser.uid) && !cloudHasConflict && !cloudSavePromise) {
+        cloudSavePromise = flushPendingCloudChanges();
+    }
+});
 function getTodayStr() { return new Date().toISOString().split('T')[0]; }
 function parseDateVi(dStr) { 
     if(!dStr) return '--/--';
@@ -405,7 +589,10 @@ function openModal(id) {
     }
     document.getElementById(id).style.display = 'flex'; 
 }
-function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+function closeModal(id) {
+    document.getElementById(id).style.display = 'none';
+    if (id === 'modal-attendance') applyDeferredCloudData();
+}
 function showLoading(show, text="Đang xử lý...") { document.getElementById('loading-text').innerText = text; document.getElementById('loading-overlay').classList.toggle('hidden', !show); }
 
 // ================= LỊCH HỌC =================
@@ -641,11 +828,17 @@ function isHoliday(dateStr, classId) {
     return null;
 }
 
-function generateSchedules() {
+function generateSchedules(rebuildPending = false) {
+    const before = JSON.stringify(db.sessions);
     const today = new Date(); const maxDate = new Date(); maxDate.setDate(today.getDate() + 90);
     db.classes.forEach(cls => {
         if(!cls.tkb || cls.tkb.length === 0) return; let currDate = new Date(cls.startDate); if(isNaN(currDate)) return;
-        db.sessions = db.sessions.filter(s => { if (s.classId != cls.id) return true; if (s.isMakeup) return true; if (s.status === 'completed') return true; return false; });
+        // Giữ nguyên ID các buổi chưa học khi đăng nhập hoặc khi mở lại app.
+        // Chỉ làm mới lịch chưa dạy khi giáo viên thực sự sửa nhóm/lịch nghỉ.
+        if (rebuildPending) db.sessions = db.sessions.filter(s => {
+            if (s.classId != cls.id || s.isMakeup || s.status === 'completed') return true;
+            return false;
+        });
         while(currDate <= maxDate) {
             let dStr = currDate.toISOString().split('T')[0]; let dow = currDate.getDay() === 0 ? 8 : currDate.getDay() + 1; 
             cls.tkb.forEach(t => {
@@ -658,15 +851,12 @@ function generateSchedules() {
             currDate.setDate(currDate.getDate() + 1);
         }
     });
-    saveData(); 
+    if (JSON.stringify(db.sessions) !== before) saveData();
 }
 
 // ================= BẢNG ĐIỀU KHIỂN =================
 function updateDashboard() {
-    db.sessions = db.sessions.filter(s => db.classes.some(c => c.id == s.classId)); 
-    db.students = db.students.filter(s => db.classes.some(c => c.id == s.classId)); 
-    db.tuitions = db.tuitions.filter(t => db.classes.some(c => c.id == t.classId)); 
-    db.attendance = db.attendance.filter(a => db.sessions.some(s => String(s.id) === String(a.sessionId)));
+    // Vẽ báo cáo phải là thao tác chỉ đọc: không xóa dữ liệu mỗi lần chuyển màn hình.
     
     document.getElementById('dash-total-classes').innerText = db.classes.length; 
     
@@ -1378,9 +1568,10 @@ async function collectMonthlyTuition(studentId) {
             amount: fresh.due, billingMode: 'monthly', billingMonth: month,
             billedSessions: fresh.attended, note: 'Học phí tháng ' + month
         });
-        await saveData();
+        const synced = await saveData();
         renderMonthlyTuition();
-        showToast('Đã ghi nhận học phí tháng ' + month + '.');
+        if (synced) showToast('Đã ghi nhận học phí tháng ' + month + ' và đồng bộ Cloud.');
+        else showToast('Đã lưu trên máy; giao dịch học phí chưa được Cloud xác nhận. Hãy sao lưu JSON.', 'error');
     } catch (err) {
         console.error(err);
         showToast('Lỗi ghi nhận học phí tháng. Kiểm tra dữ liệu trước khi thu lại.', 'error');
@@ -1394,9 +1585,10 @@ async function cancelMonthlyTuition(id) {
     if (!confirm('Hủy giao dịch thu ' + Number(transaction.amount).toLocaleString('vi-VN') +
         'đ cho tháng ' + transaction.billingMonth + '?')) return;
     db.tuitions = db.tuitions.filter(t => String(t.id) !== String(id));
-    await saveData();
+    const synced = await saveData();
     renderMonthlyTuition();
-    showToast('Đã hủy giao dịch học phí tháng.');
+    if (synced) showToast('Đã hủy giao dịch học phí tháng và đồng bộ Cloud.');
+    else showToast('Thao tác đã lưu trên máy nhưng Cloud chưa xác nhận. Hãy sao lưu JSON.', 'error');
 }
 
 function exportMonthlyTuitionExcel() {
@@ -1794,7 +1986,7 @@ function onPayCycleSelectionChange() {
     document.getElementById('pay-total-amount').innerText = totalAmount.toLocaleString() + 'đ';
 }
 
-function confirmPayment() {
+async function confirmPayment() {
     if (!currentPayStudentInfo || currentSelectedCycles.length === 0) {
         return showToast("Vui lòng chọn ít nhất một kỳ để thu tiền!", "error");
     }
@@ -1823,10 +2015,11 @@ function confirmPayment() {
         });
     });
 
-    saveData();
+    const synced = await saveData();
     closeModal('modal-pay-tuition');
     renderTuition();
-    showToast(`✅ Đã ghi nhận thu học phí ${currentSelectedCycles.length} kỳ thành công!`);
+    if (synced) showToast('✅ Đã ghi nhận thu học phí ' + currentSelectedCycles.length + ' kỳ và đồng bộ Cloud.');
+    else showToast('Đã lưu trên máy; giao dịch chưa đồng bộ Cloud. Hãy sao lưu JSON.', 'error');
 }
 
 // ================= ZALO & THÔNG BÁO HỌC PHÍ KÈM QR GIÁO VIÊN =================
@@ -2135,7 +2328,18 @@ function renderClasses() {
     populateClassSelects();
 }
 
-function deleteClass(id) { if(confirm("CẢNH BÁO ĐỎ: Xóa nhóm lớp sẽ XÓA VĨNH VIỄN toàn bộ dữ liệu của lớp này. Bạn chắc chắn chứ?")) { db.classes = db.classes.filter(c => c.id != id); saveData(); renderClasses(); showToast("Đã xóa nhóm lớp!"); } }
+function deleteClass(id) {
+    if (!confirm("CẢNH BÁO ĐỎ: Xóa nhóm lớp sẽ XÓA VĨNH VIỄN toàn bộ dữ liệu của lớp này. Bạn chắc chắn chứ?")) return;
+    const removedSessionIds = new Set(db.sessions.filter(s => String(s.classId) === String(id)).map(s => String(s.id)));
+    db.classes = db.classes.filter(c => String(c.id) !== String(id));
+    db.students = db.students.filter(s => String(s.classId) !== String(id));
+    db.sessions = db.sessions.filter(s => String(s.classId) !== String(id));
+    db.tuitions = db.tuitions.filter(t => String(t.classId) !== String(id));
+    db.attendance = db.attendance.filter(a => !removedSessionIds.has(String(a.sessionId)));
+    saveData();
+    renderClasses();
+    showToast("Đã xóa nhóm lớp!");
+}
 function addTkbRow(day=2, start='18:00', end='20:00') { const div = document.createElement('div'); div.className = 'form-row tkb-row mb-15'; div.style.alignItems = 'center'; div.innerHTML = `<select class="tkb-day" style="flex: 1; padding: 12px 5px; text-align: center; min-width: 60px;"><option value="2">T2</option><option value="3">T3</option><option value="4">T4</option><option value="5">T5</option><option value="6">T6</option><option value="7">T7</option><option value="8">CN</option></select><input type="time" class="tkb-start" value="${start}" style="flex: 1.2; padding: 12px 5px; text-align: center;"><input type="time" class="tkb-end" value="${end}" style="flex: 1.2; padding: 12px 5px; text-align: center;"><button class="btn-outline-action text-red" style="flex-shrink: 0; width: 44px; height: 44px; padding: 0;" onclick="this.parentElement.remove()"><i class="fas fa-trash"></i></button>`; div.querySelector('.tkb-day').value = day; document.getElementById('tkb-container').appendChild(div); }
 function saveClass() {
     const id = document.getElementById('class-id').value;
@@ -2165,7 +2369,7 @@ function saveClass() {
         if (index < 0) return showToast('Không tìm thấy nhóm cần sửa!', 'error');
         db.classes[index] = { ...db.classes[index], ...obj };
     } else db.classes.push(obj);
-    saveData(); closeModal('modal-add-class'); renderClasses(); generateSchedules();
+    saveData(); closeModal('modal-add-class'); renderClasses(); generateSchedules(true);
     showToast('Đã lưu Nhóm!');
 }
 function editClass(id) { let c = db.classes.find(x => x.id == id); if(!c) return; document.getElementById('class-id').value = c.id; document.getElementById('cl-name').value = c.name; document.getElementById('cl-fee').value = c.fee; document.getElementById('cl-cycle').value = c.cycle; document.getElementById('cl-start').value = c.startDate; document.getElementById('cl-tuition-mode').value = getClassTuitionMethod(c); toggleClassTuitionMode(); document.getElementById('tkb-container').innerHTML = ''; c.tkb.forEach(t => addTkbRow(t.dayOfWeek, t.start, t.end)); openModal('modal-add-class'); }
@@ -2278,9 +2482,9 @@ function editHoliday(id) { let h = db.holidays.find(x => x.id == id); if(!h) ret
 function saveHoliday() {
     let id = document.getElementById('hol-id').value; let name = document.getElementById('hol-name').value, start = document.getElementById('hol-start').value, end = document.getElementById('hol-end').value; let cid = document.getElementById('hol-class').value; if(!name || !start || !end) return showToast("Nhập đủ thông tin!", "error");
     if(id) { let index = db.holidays.findIndex(h => h.id == id); if(index > -1) db.holidays[index] = { id: parseInt(id), name, start, end, classId: cid }; } else { db.holidays.push({ id: Date.now(), name, start, end, classId: cid }); }
-    saveData(); generateSchedules(); closeModal('modal-add-holiday'); if(document.getElementById('view-calendar').classList.contains('active')) renderHolidays(); showToast("Đã lưu lịch nghỉ & Cập nhật Lịch học!");
+    saveData(); generateSchedules(true); closeModal('modal-add-holiday'); if(document.getElementById('view-calendar').classList.contains('active')) renderHolidays(); showToast("Đã lưu lịch nghỉ & Cập nhật Lịch học!");
 }
-function deleteHoliday(id) { if(confirm("Xóa lịch nghỉ?")) { db.holidays = db.holidays.filter(h => h.id != id); saveData(); generateSchedules(); renderHolidays(); } }
+function deleteHoliday(id) { if(confirm("Xóa lịch nghỉ?")) { db.holidays = db.holidays.filter(h => h.id != id); saveData(); generateSchedules(true); renderHolidays(); } }
 
 
 // ================= ĐẶT LẠI DỮ LIỆU ĐỂ NHẬP MỚI =================
@@ -2359,16 +2563,32 @@ function backupData() {
 }
 
 function restoreData(event) {
-    let file = event.target.files[0]; if(!file) return; let reader = new FileReader();
-    reader.onload = function(e) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async function(e) {
         try {
-            let parsed = JSON.parse(e.target.result);
-            if(parsed.classes && parsed.students) { 
-                if(confirm("CẢNH BÁO: Dữ liệu hiện tại trên trình duyệt sẽ bị GHI ĐÈ hoàn toàn bởi dữ liệu từ file này. Bạn có chắc chắn muốn khôi phục?")) { db = parsed; saveData(); closeModal('modal-settings'); alert("Khôi phục thành công! Nhấn OK để tải lại ứng dụng."); location.reload(); }
-            } else { showToast("File khôi phục không hợp lệ!", "error"); }
-        } catch(err) { showToast("Lỗi đọc file!", "error"); }
+            const parsed = JSON.parse(e.target.result);
+            if (!parsed.classes || !parsed.students || !Array.isArray(parsed.classes) || !Array.isArray(parsed.students)) {
+                return showToast('File khôi phục không hợp lệ!', 'error');
+            }
+            if (!confirm('Dữ liệu hiện tại sẽ được thay bằng dữ liệu trong tệp. Bạn đã có bản sao lưu JSON?')) return;
+            db = Object.assign({}, defaultData, parsed);
+            const synced = await saveData();
+            closeModal('modal-settings');
+            if (synced) {
+                alert('Đã khôi phục và xác nhận đồng bộ Firebase. Ứng dụng sẽ tải lại.');
+                location.reload();
+            } else {
+                showToast('Đã giữ bản khôi phục trên máy nhưng chưa xác nhận Cloud. Không tự tải lại để tránh mất dữ liệu.', 'error');
+            }
+        } catch (err) {
+            console.error('Lỗi khôi phục dữ liệu:', err);
+            showToast('Không thể đọc hoặc khôi phục file!', 'error');
+        }
     };
-    reader.readAsText(file); event.target.value = ''; 
+    reader.readAsText(file);
+    event.target.value = '';
 }
 
 let parsedData = [];
