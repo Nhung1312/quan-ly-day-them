@@ -365,6 +365,7 @@ let cloudSavePromise = null;
 let localChangeVersion = 0;
 let lastSavedVersion = 0;
 let cloudHasConflict = false;
+let deferredCloudData = null;
 
 function pendingSyncKey(uid) {
     return PENDING_SYNC_PREFIX + uid;
@@ -423,7 +424,20 @@ function adoptCloudData(snapshotData) {
     updateDashboard();
     refreshVisibleDataView();
 }
+function applyDeferredCloudData() {
+    if (!deferredCloudData || !currentUser || hasPendingSync(currentUser.uid) ||
+        cloudSavePromise || cloudHasConflict) return;
+    const payload = deferredCloudData;
+    deferredCloudData = null;
+    const signature = canonicalCloudSignature(payload);
+    if (signature !== cloudBaselineSignature) {
+        cloudBaselineSignature = signature;
+        adoptCloudData(payload);
+        showToast('☁️ Đã cập nhật dữ liệu mới sau khi đóng cửa sổ điểm danh.');
+    }
+}
 function stopRealtimeCloudSync() {
+    deferredCloudData = null;
     if (stopCloudListener) {
         stopCloudListener();
         stopCloudListener = null;
@@ -438,6 +452,12 @@ function startRealtimeCloudSync(uid) {
             snapshot.metadata.fromCache || snapshot.metadata.hasPendingWrites || !snapshot.exists()) return;
         const remoteSignature = canonicalCloudSignature(snapshot.data());
         if (remoteSignature === cloudBaselineSignature) return;
+        // Phiếu điểm danh có thể còn lựa chọn chưa bấm Lưu.
+        const editingAttendance = document.getElementById('modal-attendance');
+        if (editingAttendance && editingAttendance.style.display === 'flex') {
+            deferredCloudData = snapshot.data();
+            return;
+        }
         // Không để ảnh chụp Cloud ghi đè thao tác chưa lưu hoặc đang chờ đồng bộ.
         if (cloudSavePromise) return;
         if (cloudHasConflict || hasPendingSync(uid)) {
@@ -569,7 +589,10 @@ function openModal(id) {
     }
     document.getElementById(id).style.display = 'flex'; 
 }
-function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+function closeModal(id) {
+    document.getElementById(id).style.display = 'none';
+    if (id === 'modal-attendance') applyDeferredCloudData();
+}
 function showLoading(show, text="Đang xử lý...") { document.getElementById('loading-text').innerText = text; document.getElementById('loading-overlay').classList.toggle('hidden', !show); }
 
 // ================= LỊCH HỌC =================
