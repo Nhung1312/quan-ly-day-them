@@ -19,11 +19,17 @@ function harness(initialCloud = { classes: [], students: [], sessions: [], atten
   };
   const calls = [];
   const toasts = [];
-  const widgets = { activeView: 'view-students' };
+  const widgets = { activeView: 'view-students', attendanceModalOpen: false };
   const document = {
     querySelector(selector) {
       if (selector === '.view.active') return {
         id: widgets.activeView, contains() { return false; }
+      };
+      return null;
+    },
+    getElementById(id) {
+      if (id === 'modal-attendance') return {
+        style: { display: widgets.attendanceModalOpen ? 'flex' : 'none' }
       };
       return null;
     },
@@ -55,7 +61,7 @@ function harness(initialCloud = { classes: [], students: [], sessions: [], atten
     'renderHolidays', 'renderMakeups', 'renderMonthClasses', 'renderUpcomingClasses',
     'showToast', 'currentTuitionMethod', 'console',
     syncCode + '\nreturn {' +
-      'saveData, startRealtimeCloudSync, canonicalCloudSignature, ' +
+      'saveData, startRealtimeCloudSync, canonicalCloudSignature, applyDeferredCloudData, ' +
       'getDb: () => db, setDb: d => { db = d; }, ' +
       'setBaseline: sig => { cloudBaselineSignature = sig; }, ' +
       'getBaseline: () => cloudBaselineSignature, ' +
@@ -175,4 +181,29 @@ test('Không sửa Rules của app Dạy thêm', () => {
   assert.match(source, /onSnapshot/);
   assert.match(source, /hasPendingSync/);
   assert.doesNotMatch(source, /firebase\.rules/);
+});
+
+
+test('Khi đang sửa phiếu điểm danh không ghi đè lựa chọn chưa lưu', () => {
+  const h = harness();
+  h.startRealtimeCloudSync('owner');
+  h.widgets.attendanceModalOpen = true;
+  const next = h.getRemote();
+  next.students.push({ id: 99, name: 'Dữ liệu Cloud mới' });
+  h.changeRemote(next);
+  assert.equal(h.getDb().students.length, 0);
+  h.widgets.attendanceModalOpen = false;
+  h.applyDeferredCloudData();
+  assert.equal(h.getDb().students[0].id, 99);
+});
+
+test('Hai lượt lưu liên tiếp đều được đồng bộ, không rơi lượt cuối', async () => {
+  const h = harness();
+  h.getDb().students.push({ id: 1, name: 'A' });
+  const a = h.saveData();
+  h.getDb().students.push({ id: 2, name: 'B' });
+  const b = h.saveData();
+  await Promise.all([a, b]);
+  assert.equal(h.getRemote().students.length, 2);
+  assert.equal(h.getDirty(), false);
 });
