@@ -932,7 +932,8 @@ function quickCancelAttendanceSession() {
         name: 'Nghỉ cả buổi (từ điểm danh)',
         start: session.date, end: session.date,
         classId: session.classId, sessionStart: session.start || '',
-        isMakeup: !!session.isMakeup, quickAttendance: true
+        isMakeup: !!session.isMakeup, quickAttendance: true,
+        originalNote: session.note || ''
     });
     session.status = 'canceled';
     session.note = 'Nghỉ: Nghỉ cả buổi (từ điểm danh)';
@@ -954,8 +955,9 @@ function restoreQuickHolidayById(id) {
         s.date === holiday.start && String(s.start || '') === String(holiday.sessionStart || '') &&
         !!s.isMakeup === !!holiday.isMakeup).forEach(session => {
         const otherHoliday = session.isMakeup ? null : isHoliday(session.date, session.classId, session.start);
+        if (session.status === 'completed') return; // Không đổi buổi đã hoàn thành.
         session.status = otherHoliday ? 'canceled' : 'pending';
-        session.note = otherHoliday ? 'Nghỉ: ' + otherHoliday.name : '';
+        session.note = otherHoliday ? 'Nghỉ: ' + otherHoliday.name : (holiday.originalNote || '');
     });
     saveData();
     if (document.getElementById('modal-attendance').style.display === 'flex') closeModal('modal-attendance');
