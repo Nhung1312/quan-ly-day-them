@@ -303,7 +303,23 @@
     
     <div id="modal-import" class="modal"><div class="modal-content" style="max-height: 95vh;"><div class="modal-header"><h3>📤 Import Danh Sách</h3><div class="close" onclick="closeModal('modal-import')"><i class="fas fa-times"></i></div></div><div class="modal-body"><div id="import-step-1"><div class="drop-zone" onclick="document.getElementById('import-file').click()"><i class="fas fa-cloud-upload-alt drop-icon text-blue"></i><h4>Nhấn để chọn file</h4><p class="text-sm text-muted">Hỗ trợ: Excel (.xlsx), Word (.docx), Ảnh (.jpg, .png)</p><input type="file" id="import-file" style="display:none;" accept=".xlsx, .xls, .csv, .docx, .png, .jpg, .jpeg" onchange="handleImportFile(event)"></div></div><div id="import-step-2" class="hidden"><div class="alert-item green mb-15"><div class="alert-info" id="import-status">Đã trích xuất dữ liệu! Xác nhận bên dưới.</div></div><div class="input-group mb-15"><label style="color: var(--primary-dark);">Chọn nhóm lớp đưa vào *</label><select id="import-class-select" style="border: 2px solid var(--primary);"></select></div><div class="table-responsive"><table class="preview-table"><thead><tr><th>Họ và tên</th><th>SĐT Phụ huynh</th><th>Học phí (Nếu có)</th></tr></thead><tbody id="import-preview-body"></tbody></table></div></div></div><div class="modal-footer hidden" id="import-footer"><button class="btn-outline w-full" onclick="closeModal('modal-import')">Hủy</button><button class="btn-primary w-full" onclick="confirmImport()">✅ Xác nhận Nhập</button></div></div></div>
 
-    <div id="modal-attendance" class="modal"><div class="modal-content" style="height: 90vh;"><div class="modal-header"><div><h3 id="att-class-name">Điểm danh</h3><p class="text-sm text-muted" id="att-date-info"></p></div><div class="close" onclick="closeModal('modal-attendance')"><i class="fas fa-times"></i></div></div><div class="modal-body" style="padding: 0; background: #f8fafc;"><div class="att-alert"><i class="fas fa-info-circle"></i> Mặc định TẤT CẢ đang có mặt. Bấm để chuyển trạng thái.</div><div id="att-student-list" style="padding: 10px;"></div></div><div class="modal-footer"><button class="btn-primary w-full btn-large" style="font-size: 1.05rem;" onclick="submitAttendance()"><i class="fas fa-check-circle"></i> HOÀN THÀNH BUỔI HỌC</button></div></div></div>
+    <div id="modal-attendance" class="modal">
+        <div class="modal-content" style="height: 90vh;">
+            <div class="modal-header">
+                <div><h3 id="att-class-name">Điểm danh</h3><p class="text-sm text-muted" id="att-date-info"></p></div>
+                <div class="close" onclick="closeModal('modal-attendance')"><i class="fas fa-times"></i></div>
+            </div>
+            <div class="modal-body" style="padding: 0; background: #f8fafc;">
+                <div class="att-alert" id="att-session-alert">Mặc định TẤT CẢ học sinh có mặt.</div>
+                <div id="att-student-list" style="padding: 10px;"></div>
+            </div>
+            <div class="modal-footer attendance-footer">
+                <button type="button" id="att-cancel-session" class="att-cancel-session-btn" onclick="quickCancelAttendanceSession()"><i class="fas fa-calendar-times"></i> NGHỈ CẢ BUỔI NÀY</button>
+                <button type="button" id="att-restore-session" class="att-restore-session-btn" onclick="restoreQuickCanceledSession()" style="display:none;"><i class="fas fa-undo"></i> KHÔI PHỤC BUỔI HỌC</button>
+                <button type="button" id="att-complete-session" class="btn-primary w-full btn-large" style="font-size: 1.05rem;" onclick="submitAttendance()"><i class="fas fa-check-circle"></i> HOÀN THÀNH BUỔI HỌC</button>
+            </div>
+        </div>
+    </div>
     
     <!-- MODAL BÁO HỌC SINH VẮNG HỌC QUA ZALO -->
     <div id="modal-zalo-absence" class="modal" style="z-index: 220;">

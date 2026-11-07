@@ -444,3 +444,19 @@ input:focus, select:focus { border-color: var(--primary); background: white; box
     .backup-prep-actions button { width: 100%; }
     .backup-prep-dialog { padding: 22px 17px; }
 }
+
+/* Điểm danh: nghỉ cả ca và khôi phục ca nghỉ đã đánh dấu nhanh. */
+.attendance-footer { flex-direction: column; gap: 9px; }
+.att-cancel-session-btn, .att-restore-session-btn {
+    width: 100%; min-height: 46px; padding: 11px 15px; border-radius: 12px;
+    font-size: 0.95rem; font-weight: 800; cursor: pointer;
+}
+.att-cancel-session-btn { color: #991b1b; background: #fff1f2; border: 1px solid #fda4af; }
+.att-restore-session-btn { color: #065f46; background: #ecfdf5; border: 1px solid #6ee7b7; }
+.att-cancel-session-btn:focus-visible, .att-restore-session-btn:focus-visible {
+    outline: 3px solid var(--primary); outline-offset: 2px;
+}
+.att-canceled-message {
+    padding: 24px 14px; text-align: center; font-weight: 700;
+    color: #991b1b; line-height: 1.6;
+}

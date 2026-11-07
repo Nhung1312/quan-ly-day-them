@@ -7,7 +7,7 @@
     "dev": "node server.js",
     "build": "mkdir -p dist && cp -r index.html script.js style.css manifest.json sw.js icon-app.png qr-thu-phi.jpg dist/ 2>/dev/null || cp -r * dist/ 2>/dev/null",
     "start": "node server.js",
-    "test": "node --test tests/realtime-sync.test.mjs",
+    "test": "node --test tests/*.test.mjs",
     "lint": "node --check script.js && node --check server.js"
   },
   "dependencies": {
