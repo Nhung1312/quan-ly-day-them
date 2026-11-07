@@ -86,13 +86,16 @@ test('Nghỉ riêng ca dạy bù không tự hủy ca trong thời khóa biểu'
     const { db, api, active } = setup();
     const regular = active()[0];
     const makeup = { id: 'makeup-test', classId: 1, date: regular.date,
-        start: regular.start, end: '20:00', isMakeup: true, status: 'pending' };
+        start: regular.start, end: '20:00', isMakeup: true, status: 'pending', note: 'Bù cho tuần trước' };
     db.sessions.push(makeup);
     api.setCurrent(makeup.id);
     api.quickCancelAttendanceSession();
     assert.equal(makeup.status, 'canceled');
     assert.equal(api.isHoliday(regular.date, 1, regular.start), null);
     assert.equal(regular.status, 'pending');
+    api.restoreQuickHolidayById(db.holidays[0].id);
+    assert.equal(makeup.status, 'pending');
+    assert.equal(makeup.note, 'Bù cho tuần trước', 'Không mất ghi chú dạy bù');
 });
 
 test('Các nút trong phần điểm danh và hàm xử lý đều được nối', () => {
