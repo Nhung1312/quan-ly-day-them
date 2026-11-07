@@ -647,7 +647,7 @@ function resetWeekCalendar() {
 
 function openWeeklyAttendance(sessionId) {
     const session = db.sessions.find(s => String(s.id) === String(sessionId));
-    if (!session || session.status === 'canceled') return;
+    if (!session || (session.status === 'canceled' && !getQuickAttendanceHoliday(session))) return;
     const cls = db.classes.find(c => String(c.id) === String(session.classId));
     openAttendance(String(session.id), cls ? cls.name : 'Lớp đã xóa');
 }
@@ -746,10 +746,10 @@ function renderWeekCalendar() {
                 (s.isMakeup ? ' · Dạy bù' : '') + '</p><p>' +
                 escapeWeekHtml(attendanceInfo) + '</p><span class="week-session-status ' +
                 cssStatus + '">' + status + '</span></div>' +
-                (isCanceled ? '' :
+                (isCanceled && !getQuickAttendanceHoliday(s) ? '' :
                     '<button type="button" class="week-attendance-btn" data-week-session-id="' +
                     escapeWeekHtml(s.id) + '">' +
-                    (isCompleted ? 'Sửa điểm danh' : 'Điểm danh') + '</button>') +
+                    (isCanceled ? 'Khôi phục buổi' : (isCompleted ? 'Sửa điểm danh' : 'Điểm danh')) + '</button>') +
                 '</div>';
         });
         html += '</section>';
@@ -808,8 +808,9 @@ function renderMonthClasses() {
             let cls = db.classes.find(c => c.id == s.classId);
             let color = s.status === 'canceled' ? 'color:var(--danger)' : (s.isMakeup ? 'color:var(--warning)' : 'color:var(--primary-dark)');
             let strike = s.status === 'canceled' ? 'text-decoration:line-through; opacity:0.6;' : '';
-            let pointer = s.status !== 'canceled' ? 'cursor:pointer;' : '';
-            let onClick = s.status !== 'canceled' ? `onclick="openAttendance('${s.id}', '${cls?cls.name:''}')"` : '';
+            let canOpen = s.status !== 'canceled' || !!getQuickAttendanceHoliday(s);
+            let pointer = canOpen ? 'cursor:pointer;' : '';
+            let onClick = canOpen ? `onclick="openAttendance('${s.id}', '${cls?cls.name:''}')"` : '';
             let checkIcon = s.status === 'completed' ? '<i class="fas fa-check-circle text-green" style="margin-left:5px;"></i>' : '';
             return `<div ${onClick} style="margin-top:6px; font-size:0.85rem; font-weight:700; ${strike} ${color} ${pointer}">• ${s.start||'--:--'}: ${cls?cls.name:'Lớp xóa'} ${s.status === 'canceled' ? '(Nghỉ)' : ''} ${s.isMakeup ? '(Dạy bù)' : ''} ${checkIcon}</div>`;
         }).join('');
@@ -817,9 +818,11 @@ function renderMonthClasses() {
     });
 }
 
-function isHoliday(dateStr, classId) {
+function isHoliday(dateStr, classId, sessionStart = null) {
     const d = new Date(dateStr);
     for(let h of db.holidays) {
+        if (h.quickAttendance && h.isMakeup) continue; // Nghỉ ca dạy bù không hủy ca TKB.
+        if (h.sessionStart != null && String(h.sessionStart) !== String(sessionStart)) continue;
         if(h.classId === 'ALL' || h.classId == classId) {
             let start = new Date(h.start); start.setHours(0,0,0,0); let end = new Date(h.end); end.setHours(23,59,59,999);
             if(d >= start && d <= end) return h;
@@ -843,7 +846,7 @@ function generateSchedules(rebuildPending = false) {
             let dStr = currDate.toISOString().split('T')[0]; let dow = currDate.getDay() === 0 ? 8 : currDate.getDay() + 1; 
             cls.tkb.forEach(t => {
                 if(t.dayOfWeek == dow) {
-                    let hol = isHoliday(dStr, cls.id);
+                    let hol = isHoliday(dStr, cls.id, t.start);
                     let exist = db.sessions.find(s => s.classId == cls.id && s.date === dStr && s.start === t.start && !s.isMakeup);
                     if(!exist) { db.sessions.push({ id: 'sess_' + Date.now() + Math.floor(Math.random()*10000), classId: cls.id, date: dStr, start: t.start, end: t.end, status: hol ? 'canceled' : 'pending', isMakeup: false, note: hol ? `Nghỉ: ${hol.name}` : '' }); }
                 }
@@ -905,6 +908,68 @@ function updateDashboard() {
 }
 
 // ================= ĐIỂM DANH =================
+// Nghỉ nhanh một ca từ màn hình điểm danh, không phải nghỉ của từng học sinh.
+function getQuickAttendanceHoliday(session) {
+    if (!session) return null;
+    return db.holidays.find(h => h.quickAttendance &&
+        String(h.classId) === String(session.classId) &&
+        h.start === session.date && h.end === session.date &&
+        String(h.sessionStart) === String(session.start || '') &&
+        !!h.isMakeup === !!session.isMakeup) || null;
+}
+
+function quickCancelAttendanceSession() {
+    const session = db.sessions.find(s => String(s.id) === String(currentAttSessionId));
+    if (!session) return showToast('Không tìm thấy buổi học!', 'error');
+    if (session.status === 'completed') {
+        return showToast('Buổi đã hoàn thành điểm danh. Không thể đánh dấu nghỉ để tránh sai học phí.', 'error');
+    }
+    if (session.status === 'canceled') return showToast('Buổi này đã được đánh dấu nghỉ.', 'error');
+    if (!confirm('Xác nhận NGHỈ CẢ BUỔI ngày ' + parseDateVi(session.date) +
+        ' (' + (session.start || '--:--') + ')?\n\nBuổi nghỉ không tính học phí. Ngày đạt mốc 10/20 buổi sẽ tự lùi.')) return;
+    db.holidays.push({
+        id: Date.now() + Math.floor(Math.random() * 10000),
+        name: 'Nghỉ cả buổi (từ điểm danh)',
+        start: session.date, end: session.date,
+        classId: session.classId, sessionStart: session.start || '',
+        isMakeup: !!session.isMakeup, quickAttendance: true
+    });
+    session.status = 'canceled';
+    session.note = 'Nghỉ: Nghỉ cả buổi (từ điểm danh)';
+    // Không để lựa chọn điểm danh chưa lưu của ca nghỉ tạo học phí.
+    db.attendance = db.attendance.filter(a => String(a.sessionId) !== String(session.id));
+    saveData();
+    closeModal('modal-attendance');
+    refreshVisibleDataView();
+    showToast('Đã ghi nghỉ buổi này. Mốc thu học phí đã tự điều chỉnh.');
+}
+
+function restoreQuickHolidayById(id) {
+    const holiday = db.holidays.find(h => String(h.id) === String(id) && h.quickAttendance);
+    if (!holiday) return showToast('Không tìm thấy buổi nghỉ nhanh!', 'error');
+    if (!confirm('Khôi phục buổi ' + parseDateVi(holiday.start) + ' lúc ' +
+        (holiday.sessionStart || '--:--') + '? Buổi sẽ trở lại lịch điểm danh.')) return;
+    db.holidays = db.holidays.filter(h => String(h.id) !== String(id));
+    db.sessions.filter(s => String(s.classId) === String(holiday.classId) &&
+        s.date === holiday.start && String(s.start || '') === String(holiday.sessionStart || '') &&
+        !!s.isMakeup === !!holiday.isMakeup).forEach(session => {
+        const otherHoliday = session.isMakeup ? null : isHoliday(session.date, session.classId, session.start);
+        session.status = otherHoliday ? 'canceled' : 'pending';
+        session.note = otherHoliday ? 'Nghỉ: ' + otherHoliday.name : '';
+    });
+    saveData();
+    if (document.getElementById('modal-attendance').style.display === 'flex') closeModal('modal-attendance');
+    refreshVisibleDataView();
+    showToast('Đã khôi phục buổi học.');
+}
+
+function restoreQuickCanceledSession() {
+    const session = db.sessions.find(s => String(s.id) === String(currentAttSessionId));
+    const holiday = getQuickAttendanceHoliday(session);
+    if (!holiday) return showToast('Buổi này được nghỉ theo Lịch nghỉ; hãy chỉnh ở tab Lịch nghỉ.', 'error');
+    restoreQuickHolidayById(holiday.id);
+}
+
 let currentAttSessionId = null;
 let currentAbsenceZaloPayload = null;
 
@@ -912,7 +977,21 @@ function openAttendance(sessionId, className) {
     currentAttSessionId = String(sessionId); const session = db.sessions.find(s => String(s.id) === currentAttSessionId);
     if(!session) return showToast("Không tìm thấy dữ liệu buổi học!", "error");
     document.getElementById('att-class-name').innerText = className; document.getElementById('att-date-info').innerText = `${parseDateVi(session.date)} (${session.start||'--:--'} - ${session.end||'--:--'})`;
-    
+    const canceled = session.status === 'canceled';
+    const quickHoliday = getQuickAttendanceHoliday(session);
+    document.getElementById('att-cancel-session').style.display = !canceled && session.status !== 'completed' ? '' : 'none';
+    document.getElementById('att-restore-session').style.display = quickHoliday ? '' : 'none';
+    document.getElementById('att-complete-session').style.display = canceled ? 'none' : '';
+    document.getElementById('att-session-alert').textContent = canceled
+        ? (quickHoliday ? 'Buổi này đã nghỉ. Bấm Khôi phục buổi học nếu đánh dấu nhầm.' : 'Buổi này nghỉ theo Lịch nghỉ.')
+        : 'Mặc định TẤT CẢ học sinh có mặt. Có thể chọn NGHỈ CẢ BUỔI ở phía dưới.';
+    if (canceled) {
+        document.getElementById('att-student-list').innerHTML =
+            '<div class="att-canceled-message">Buổi nghỉ không tính vào số buổi đã dạy hoặc tiền học phí.</div>';
+        openModal('modal-attendance');
+        return;
+    }
+
     // Ẩn học sinh nghỉ ngang khỏi màn hình điểm danh
     let stus = db.students.filter(s => s.classId == session.classId && s.status !== 'inactive'); 
     let html = '';
@@ -991,6 +1070,7 @@ function submitAttendance() {
     try {
         let session = db.sessions.find(s => String(s.id) === currentAttSessionId);
         if(!session) throw new Error("Dữ liệu buổi học bị mất, vui lòng F5 trang!");
+        if(session.status === 'canceled') throw new Error("Buổi đang nghỉ. Hãy khôi phục trước khi điểm danh.");
         let stus = db.students.filter(s => s.classId == session.classId && s.status !== 'inactive');
         stus.forEach(stu => { let exist = db.attendance.find(a => String(a.sessionId) === currentAttSessionId && a.studentId == stu.id); if(!exist) db.attendance.push({ sessionId: currentAttSessionId, studentId: stu.id, status: 'có mặt' }); });
         
@@ -2474,7 +2554,12 @@ function renderHolidays() {
     const list = document.getElementById('holiday-list'); list.innerHTML = '';
     db.holidays.forEach(h => {
         let target = h.classId === 'ALL' ? 'Tất cả nhóm' : (db.classes.find(c=>c.id==h.classId)?.name || 'Lớp');
-        list.innerHTML += `<div class="list-item"><div class="list-item-info"><strong>🎉 ${h.name}</strong><small>${parseDateVi(h.start)} - ${parseDateVi(h.end)} • Áp dụng: ${target}</small></div><div style="display:flex; gap:8px;"><button class="btn-outline-action text-orange" onclick="editHoliday(${h.id})"><i class="fas fa-pen"></i></button><button class="btn-outline-action text-red" onclick="deleteHoliday(${h.id})"><i class="fas fa-trash"></i></button></div></div>`;
+        const quick = !!h.quickAttendance;
+        const timeInfo = quick ? ' • Ca ' + (h.sessionStart || '--:--') + (h.isMakeup ? ' (dạy bù)' : '') : '';
+        const actions = quick
+            ? `<button type="button" class="btn-outline-action text-green" onclick="restoreQuickHolidayById(${h.id})" title="Khôi phục buổi học" aria-label="Khôi phục buổi nghỉ"><i class="fas fa-undo"></i></button>`
+            : `<button class="btn-outline-action text-orange" onclick="editHoliday(${h.id})"><i class="fas fa-pen"></i></button><button class="btn-outline-action text-red" onclick="deleteHoliday(${h.id})"><i class="fas fa-trash"></i></button>`;
+        list.innerHTML += `<div class="list-item"><div class="list-item-info"><strong>🎉 ${h.name}</strong><small>${parseDateVi(h.start)} - ${parseDateVi(h.end)} • Áp dụng: ${target}${timeInfo}</small></div><div style="display:flex; gap:8px;">${actions}</div></div>`;
     });
 }
 function openAddHoliday() { document.getElementById('hol-id').value = ''; document.getElementById('hol-name').value = ''; document.getElementById('hol-start').value = ''; document.getElementById('hol-end').value = ''; document.getElementById('hol-class').value = 'ALL'; openModal('modal-add-holiday'); }
@@ -2675,6 +2760,9 @@ window.saveMakeup = saveMakeup;
 window.deleteTuition = deleteTuition;
 window.confirmPayment = confirmPayment;
 window.openAttendance = openAttendance;
+window.quickCancelAttendanceSession = quickCancelAttendanceSession;
+window.restoreQuickCanceledSession = restoreQuickCanceledSession;
+window.restoreQuickHolidayById = restoreQuickHolidayById;
 window.setAtt = setAtt;
 window.submitAttendance = submitAttendance;
 window.openAbsenceZaloModal = openAbsenceZaloModal;
