@@ -984,7 +984,9 @@ function openAttendance(sessionId, className) {
     document.getElementById('att-complete-session').style.display = canceled ? 'none' : '';
     document.getElementById('att-session-alert').textContent = canceled
         ? (quickHoliday ? 'Buổi này đã nghỉ. Bấm Khôi phục buổi học nếu đánh dấu nhầm.' : 'Buổi này nghỉ theo Lịch nghỉ.')
-        : 'Mặc định TẤT CẢ học sinh có mặt. Có thể chọn NGHỈ CẢ BUỔI ở phía dưới.';
+        : (session.status === 'completed'
+            ? 'Buổi đã hoàn thành. Có thể sửa điểm danh học sinh.'
+            : 'Mặc định TẤT CẢ học sinh có mặt. Có thể chọn NGHỈ CẢ BUỔI ở phía dưới.');
     if (canceled) {
         document.getElementById('att-student-list').innerHTML =
             '<div class="att-canceled-message">Buổi nghỉ không tính vào số buổi đã dạy hoặc tiền học phí.</div>';
